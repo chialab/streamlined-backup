@@ -9,15 +9,14 @@ func TestListOfStrings(t *testing.T) {
 
 	l := listOfStrings{"foo", "bar"}
 	if err := l.Set("baz"); err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+		t.Errorf("Unexpected error: %v", err)
 	}
 	if len(l) != 3 {
-		t.Fatalf("Unexpected length: %d", len(l))
-	}
-	if l[0] != "foo" || l[1] != "bar" || l[2] != "baz" {
-		t.Fatalf("Unexpected list: %v", l)
+		t.Errorf("Unexpected length: %d", len(l))
+	} else if l[0] != "foo" || l[1] != "bar" || l[2] != "baz" {
+		t.Errorf("Unexpected list: %v", l)
 	}
 	if l.String() != "foo,bar,baz" {
-		t.Fatalf("Unexpected list: %v", l)
+		t.Errorf("Unexpected list: %v", l)
 	}
 }

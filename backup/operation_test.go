@@ -36,6 +36,11 @@ func TestShouldRun(t *testing.T) {
 			lastRun:  time.Date(2021, 10, 3, 19, 10, 38, 0, time.Local),
 			schedule: "@weekly",
 		},
+		"never_run": {
+			expected: true,
+			lastRun:  time.Time{},
+			schedule: "@weekly",
+		},
 	}
 	now := time.Date(2021, 10, 6, 19, 10, 38, 0, time.Local)
 	for name, tc := range cases {

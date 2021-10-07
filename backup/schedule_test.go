@@ -20,16 +20,16 @@ func TestScheduleUnmarshal(t *testing.T) {
 			t.Parallel()
 			s := ScheduleExpression{}
 			if err := s.UnmarshalText([]byte(expr)); err != nil {
-				t.Fatalf("unexpected error: %s", err)
+				t.Errorf("unexpected error: %s", err)
 			}
 			if *s.expression != expr {
-				t.Fatalf("expected \"%s\", got \"%s\"", expr, s.schedule)
+				t.Errorf("expected \"%s\", got \"%s\"", expr, s.schedule)
 			}
 			if s.schedule == nil {
-				t.Fatal("expected non-nil schedule")
+				t.Error("expected non-nil schedule")
 			}
 			if s.String() != expr {
-				t.Fatalf("expected \"%s\", got \"%s\"", expr, s.String())
+				t.Errorf("expected \"%s\", got \"%s\"", expr, s.String())
 			}
 		})
 	}
@@ -40,10 +40,13 @@ func TestScheduleUnmarshalFail(t *testing.T) {
 	s := ScheduleExpression{}
 	err := s.UnmarshalText([]byte("invalid"))
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Error("expected error, got nil")
 	}
 	if s.expression != nil || s.schedule != nil {
-		t.Fatalf("expected nil expression and schedule, got %s and %v", *s.expression, s.schedule)
+		t.Errorf("expected nil expression and schedule, got %s and %v", *s.expression, s.schedule)
+	}
+	if s.String() != "" {
+		t.Errorf("expected empty string, got \"%s\"", s.String())
 	}
 }
 
@@ -71,10 +74,10 @@ func TestScheduleNext(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s := ScheduleExpression{}
 			if err := s.UnmarshalText([]byte(tc.schedule)); err != nil {
-				t.Fatalf("unexpected error: %s", err)
+				t.Errorf("unexpected error: %s", err)
 			}
 			if next := s.Next(tc.start); !next.Equal(tc.expected) {
-				t.Fatalf("expected %s, got %s (%v)", tc.expected, next, s.schedule)
+				t.Errorf("expected %s, got %s (%v)", tc.expected, next, s.schedule)
 			}
 		})
 	}
@@ -85,11 +88,11 @@ func TestScheduleNextNoTime(t *testing.T) {
 
 	s := ScheduleExpression{}
 	if err := s.UnmarshalText([]byte("* * * * *")); err != nil {
-		t.Fatalf("unexpected error: %s", err)
+		t.Errorf("unexpected error: %s", err)
 	}
 	now := time.Now()
 	if next := s.Next(time.Time{}); next.Sub(now).Truncate(time.Second).Seconds() > 0 {
-		t.Fatalf("expected %s, got %s (%v)", now, next, s.schedule)
+		t.Errorf("expected %s, got %s (%v)", now, next, s.schedule)
 	}
 }
 
@@ -97,8 +100,16 @@ func TestNewSchedule(t *testing.T) {
 	t.Parallel()
 
 	if s, err := NewSchedule("@weekly"); err != nil {
-		t.Fatalf("unexpected error: %s", err)
+		t.Errorf("unexpected error: %s", err)
 	} else if s.String() != "@weekly" {
-		t.Fatalf("expected \"@weekly\", got \"%s\"", s.String())
+		t.Errorf("expected \"@weekly\", got \"%s\"", s.String())
+	}
+}
+
+func TestNewScheduleError(t *testing.T) {
+	t.Parallel()
+
+	if _, err := NewSchedule("invalid"); err == nil {
+		t.Error("expected error, got nil")
 	}
 }
