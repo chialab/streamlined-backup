@@ -27,7 +27,7 @@ jobs:
   unit:
     strategy:
       matrix:
-        os: [ ubuntu-latest, macOS-latest, windows-latest ]
+        os: [ ubuntu-latest, macOS-latest ]
 
     name: Run unit tests on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
