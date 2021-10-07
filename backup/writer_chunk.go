@@ -51,8 +51,6 @@ func (w *ChunkWriter) Close() error {
 
 	return nil
 }
-func (w *ChunkWriter) Abort(err error) error {
+func (w *ChunkWriter) Abort(err error) {
 	w.Chunks <- Chunk{Data: w.data, Error: err, Done: true}
-
-	return nil
 }
