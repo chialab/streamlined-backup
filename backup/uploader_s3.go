@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/session"
 	S3 "github.com/aws/aws-sdk-go/service/s3"
+	"github.com/hashicorp/go-multierror"
 )
 
 const timeFormat = "20060102150405"
@@ -89,11 +90,17 @@ func (s3 *S3Handler) Handler(chunks chan Chunk) {
 
 	s3.waitUntilUploadsComplete(uploads, &parts)
 	if chunk.Error != nil {
-		s3.abortMultipartUpload(uploadId)
-		s3.completion <- chunk.Error
+		if abortErr := s3.abortMultipartUpload(uploadId); err != nil {
+			s3.completion <- multierror.Append(chunk.Error, abortErr)
+		} else {
+			s3.completion <- chunk.Error
+		}
 	} else if err := s3.completeMultipartUpload(uploadId, parts); err != nil {
-		s3.abortMultipartUpload(uploadId)
-		s3.completion <- err
+		if abortErr := s3.abortMultipartUpload(uploadId); err != nil {
+			s3.completion <- multierror.Append(err, abortErr)
+		} else {
+			s3.completion <- err
+		}
 	} else {
 		s3.completion <- nil
 	}

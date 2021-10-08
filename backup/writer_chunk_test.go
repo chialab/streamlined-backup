@@ -44,13 +44,22 @@ func TestChunkWriter(t *testing.T) {
 
 	writer := NewChunkWriter(8)
 
-	writer.Write([]byte("foo"))
+	if b, err := writer.Write([]byte("foo")); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	} else if b != 3 {
+		t.Errorf("expected 3 bytes written, got %d", b)
+	}
 
 	if len(writer.Chunks) != 0 {
 		t.Error("chunks should be empty")
 	}
 
-	writer.Write([]byte("bar++"))
+	if b, err := writer.Write([]byte("bar++")); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	} else if b != 5 {
+		t.Errorf("expected 5 bytes written, got %d", b)
+	}
+
 	if len(writer.Chunks) != 1 {
 		t.Errorf("chunks should have 1 element, got %d", len(writer.Chunks))
 	} else if chunk := <-writer.Chunks; string(chunk.Data) != "foobar++" {
@@ -61,7 +70,12 @@ func TestChunkWriter(t *testing.T) {
 		t.Errorf("first chunk should not have error: %s", chunk.Error)
 	}
 
-	writer.Write([]byte("baz bazinga go lang go"))
+	if b, err := writer.Write([]byte("baz bazinga go lang go")); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	} else if b != 22 {
+		t.Errorf("expected 22 bytes written, got %d", b)
+	}
+
 	if len(writer.Chunks) != 2 {
 		t.Errorf("chunks should have 2 elements, got %d", len(writer.Chunks))
 	} else if chunk := <-writer.Chunks; string(chunk.Data) != "baz bazi" {
@@ -96,7 +110,11 @@ func TestChunkWriterAbort(t *testing.T) {
 
 	writer := NewChunkWriter(8)
 
-	writer.Write([]byte("foo"))
+	if b, err := writer.Write([]byte("foo")); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	} else if b != 3 {
+		t.Errorf("expected 3 bytes written, got %d", b)
+	}
 
 	if len(writer.Chunks) != 0 {
 		t.Error("chunks should be empty")

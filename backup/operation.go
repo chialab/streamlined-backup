@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"time"
+
+	"github.com/hashicorp/go-multierror"
 )
 
 type Operation struct {
@@ -60,7 +62,9 @@ func (o *Operation) Run(handler Handler, log logFunction) error {
 	if err := cmd.Start(); err != nil {
 		log(fmt.Sprint(err))
 		writer.Abort(err)
-		handler.Wait()
+		if handlerErr := handler.Wait(); handlerErr != nil {
+			return multierror.Append(err, handlerErr)
+		}
 
 		return err
 	}
@@ -68,7 +72,9 @@ func (o *Operation) Run(handler Handler, log logFunction) error {
 	if err := cmd.Wait(); err != nil {
 		log(fmt.Sprint(err))
 		writer.Abort(err)
-		handler.Wait()
+		if handlerErr := handler.Wait(); handlerErr != nil {
+			return multierror.Append(err, handlerErr)
+		}
 
 		return err
 	}
