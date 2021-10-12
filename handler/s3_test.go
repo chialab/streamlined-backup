@@ -1,4 +1,4 @@
-package backup
+package handler
 
 import (
 	"errors"
@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/chialab/streamlined-backup/config"
 	"github.com/chialab/streamlined-backup/utils"
 	"github.com/hashicorp/go-multierror"
 )
@@ -39,113 +40,6 @@ func TestS3UploadedParts(t *testing.T) {
 		t.Errorf("expected part 1 to be 10, got %d", parts[1].PartNumber)
 	} else if parts[2].PartNumber != int64(100) {
 		t.Errorf("expected part 2 to be 100, got %d", parts[2].PartNumber)
-	}
-}
-
-func TestKey(t *testing.T) {
-	t.Parallel()
-
-	type testCase struct {
-		expected, prefix, suffix string
-		timestamp                time.Time
-	}
-	cases := map[string]testCase{
-		"prefix_suffix": {
-			expected:  "foo/20211008131625-bar.sql",
-			prefix:    "foo/",
-			suffix:    "-bar.sql",
-			timestamp: time.Date(2021, 10, 8, 13, 16, 25, 0, time.Local),
-		},
-		"empty_prefix": {
-			expected:  "20211008131625.sql",
-			prefix:    "",
-			suffix:    ".sql",
-			timestamp: time.Date(2021, 10, 8, 13, 16, 25, 0, time.Local),
-		},
-	}
-	for name, testCase := range cases {
-		t.Run(name, func(t *testing.T) {
-			dest := &S3DestinationDefinition{
-				Prefix: testCase.prefix,
-				Suffix: testCase.suffix,
-			}
-			actual := dest.Key(testCase.timestamp)
-			if testCase.expected != actual {
-				t.Errorf("expected %s, got %s", testCase.expected, actual)
-			}
-		})
-	}
-}
-
-func TestParseTimestamp(t *testing.T) {
-	t.Parallel()
-
-	type testCase struct {
-		expected            time.Time
-		prefix, suffix, key string
-	}
-	cases := map[string]testCase{
-		"prefix_suffix": {
-			expected: time.Date(2021, 10, 8, 13, 16, 25, 0, time.Local),
-			prefix:   "foo/",
-			suffix:   "-bar.sql",
-			key:      "foo/20211008131625-bar.sql",
-		},
-		"empty_prefix": {
-			expected: time.Date(2021, 10, 8, 13, 16, 25, 0, time.Local),
-			prefix:   "",
-			suffix:   ".sql",
-			key:      "20211008131625.sql",
-		},
-	}
-	for name, testCase := range cases {
-		t.Run(name, func(t *testing.T) {
-			dest := &S3DestinationDefinition{
-				Prefix: testCase.prefix,
-				Suffix: testCase.suffix,
-			}
-
-			if actual, err := dest.ParseTimestamp(testCase.key); err != nil {
-				t.Errorf("unexpected error: %s", err)
-			} else if !actual.Equal(testCase.expected) {
-				t.Errorf("expected %s, got %s", testCase.expected, actual)
-			}
-		})
-	}
-
-	type errorCase struct {
-		prefix, suffix, key string
-	}
-	errorCases := map[string]errorCase{
-		"invalid_prefix": {
-			prefix: "foo/",
-			suffix: "-bar.sql",
-			key:    "bar/20211008131625-bar.sql",
-		},
-		"invalid_suffix": {
-			prefix: "",
-			suffix: ".sql",
-			key:    "20211008131625.tar.gz",
-		},
-		"invalid_timestamp": {
-			prefix: "",
-			suffix: ".sql",
-			key:    "invalid.sql",
-		},
-	}
-	for name, testCase := range errorCases {
-		t.Run(name, func(t *testing.T) {
-			dest := &S3DestinationDefinition{
-				Prefix: testCase.prefix,
-				Suffix: testCase.suffix,
-			}
-
-			if actual, err := dest.ParseTimestamp(testCase.key); err == nil {
-				t.Errorf("expected error, got %s", actual)
-			} else if !actual.IsZero() {
-				t.Errorf("expected zero time, got %s", actual)
-			}
-		})
 	}
 }
 
@@ -268,7 +162,7 @@ func TestS3Handler(t *testing.T) {
 	client := &mockedClientS3Upload{
 		objects: make(map[string][]byte),
 	}
-	dest := S3DestinationDefinition{
+	dest := config.S3DestinationDefinition{
 		Bucket: "example-bucket",
 		Prefix: "foo/",
 	}
@@ -315,7 +209,7 @@ func TestS3HandlerInitError(t *testing.T) {
 	client := &mockedClientS3Upload{
 		objects: make(map[string][]byte),
 	}
-	dest := S3DestinationDefinition{
+	dest := config.S3DestinationDefinition{
 		Bucket: "wrong-bucket",
 		Prefix: "foo/",
 	}
@@ -350,7 +244,7 @@ func TestS3HandlerUploadError(t *testing.T) {
 	client := &mockedClientS3Upload{
 		objects: make(map[string][]byte),
 	}
-	dest := S3DestinationDefinition{
+	dest := config.S3DestinationDefinition{
 		Bucket: "example-bucket",
 		Prefix: "foo/",
 	}
@@ -395,7 +289,7 @@ func TestS3HandlerChunkError(t *testing.T) {
 	client := &mockedClientS3Upload{
 		objects: make(map[string][]byte),
 	}
-	dest := S3DestinationDefinition{
+	dest := config.S3DestinationDefinition{
 		Bucket: "example-bucket",
 		Prefix: "foo/",
 	}
@@ -439,7 +333,7 @@ func TestS3HandlerCompleteError(t *testing.T) {
 	client := &mockedClientS3Upload{
 		objects: make(map[string][]byte),
 	}
-	dest := S3DestinationDefinition{
+	dest := config.S3DestinationDefinition{
 		Bucket: "example-bucket",
 		Prefix: "complete-error/",
 	}
@@ -484,7 +378,7 @@ func TestS3HandlerAbortError(t *testing.T) {
 	client := &mockedClientS3Upload{
 		objects: make(map[string][]byte),
 	}
-	dest := S3DestinationDefinition{
+	dest := config.S3DestinationDefinition{
 		Bucket: "example-bucket",
 		Prefix: "abort-error/",
 	}
@@ -580,7 +474,7 @@ func TestS3LastRun(t *testing.T) {
 	bucket, prefix, suffix := "example-bucket", "foo/", "-bar.sql"
 	expectedLastRun := time.Date(2021, 8, 17, 9, 30, 0, 0, time.Local)
 
-	dest := &S3DestinationDefinition{
+	dest := &config.S3DestinationDefinition{
 		Region: "us-east-1",
 		Bucket: bucket,
 		Prefix: prefix,
@@ -607,7 +501,7 @@ func TestS3LastRunEmpty(t *testing.T) {
 	bucket, prefix, suffix := "example-bucket", "bar/", "-bar.sql"
 	expectedLastRun := time.Time{}
 
-	dest := &S3DestinationDefinition{
+	dest := &config.S3DestinationDefinition{
 		Region: "us-east-1",
 		Bucket: bucket,
 		Prefix: prefix,
@@ -633,7 +527,7 @@ func TestS3LastRunError(t *testing.T) {
 
 	bucket, prefix, suffix := "wrong-bucket", "foo/", "-bar.sql"
 
-	dest := &S3DestinationDefinition{
+	dest := &config.S3DestinationDefinition{
 		Region: "us-east-1",
 		Bucket: bucket,
 		Prefix: prefix,

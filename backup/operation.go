@@ -5,9 +5,12 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/chialab/streamlined-backup/handler"
 	"github.com/chialab/streamlined-backup/utils"
 	"github.com/hashicorp/go-multierror"
 )
+
+const CHUNK_SIZE = 10 << 20
 
 type Operation struct {
 	Name     string
@@ -15,7 +18,7 @@ type Operation struct {
 	Command  []string
 	Cwd      string   `toml:"cwd,omitempty"`
 	Env      []string `toml:"env,omitempty"`
-	handler  Handler
+	handler  handler.Handler
 	logger   *log.Logger
 }
 

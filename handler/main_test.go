@@ -1,13 +1,15 @@
-package backup
+package handler
 
 import (
 	"testing"
+
+	"github.com/chialab/streamlined-backup/config"
 )
 
 func TestNewHandlerS3(t *testing.T) {
 	t.Parallel()
 
-	dest := Destination{
+	dest := config.Destination{
 		Type: "s3",
 	}
 	if handler, err := NewHandler(dest); err != nil {
@@ -20,7 +22,7 @@ func TestNewHandlerS3(t *testing.T) {
 func TestNewHandlerUnknown(t *testing.T) {
 	t.Parallel()
 
-	dest := Destination{
+	dest := config.Destination{
 		Type: "invalid",
 	}
 	if handler, err := NewHandler(dest); err == nil {
