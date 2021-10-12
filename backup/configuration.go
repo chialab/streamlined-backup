@@ -6,10 +6,11 @@ import (
 	"os"
 
 	"github.com/BurntSushi/toml"
+	"github.com/chialab/streamlined-backup/utils"
 )
 
 type operationConfig struct {
-	Schedule    ScheduleExpression
+	Schedule    utils.ScheduleExpression
 	Command     []string
 	Cwd         string   `toml:"cwd,omitempty"`
 	Env         []string `toml:"env,omitempty"`

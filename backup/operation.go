@@ -11,7 +11,7 @@ import (
 
 type Operation struct {
 	Name     string
-	Schedule ScheduleExpression
+	Schedule utils.ScheduleExpression
 	Command  []string
 	Cwd      string   `toml:"cwd,omitempty"`
 	Env      []string `toml:"env,omitempty"`

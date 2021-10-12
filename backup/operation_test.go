@@ -92,10 +92,10 @@ func TestShouldRun(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			var (
-				schedule *ScheduleExpression
+				schedule *utils.ScheduleExpression
 				err      error
 			)
-			if schedule, err = NewSchedule(tc.schedule); err != nil {
+			if schedule, err = utils.NewSchedule(tc.schedule); err != nil {
 				t.Fatalf("unexpected error: %s", err)
 			}
 			handler := &testHandler{lastRun: tc.lastRun}
@@ -114,10 +114,10 @@ func TestShouldRunError(t *testing.T) {
 	t.Parallel()
 
 	var (
-		schedule *ScheduleExpression
+		schedule *utils.ScheduleExpression
 		err      error
 	)
-	if schedule, err = NewSchedule("@daily"); err != nil {
+	if schedule, err = utils.NewSchedule("@daily"); err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
 	testErr := errors.New("test error")
@@ -213,7 +213,7 @@ func TestRunSkipped(t *testing.T) {
 
 	lastRun := time.Date(2021, 10, 12, 10, 30, 38, 0, time.Local)
 	handler := &testHandler{lastRun: lastRun}
-	schedule, err := NewSchedule("0,30 * * * *")
+	schedule, err := utils.NewSchedule("0,30 * * * *")
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
