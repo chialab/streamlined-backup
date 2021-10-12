@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/chialab/streamlined-backup/backup"
+	"github.com/chialab/streamlined-backup/config"
 	"github.com/chialab/streamlined-backup/notifier"
 	"github.com/chialab/streamlined-backup/utils"
 	"github.com/hashicorp/go-multierror"
 )
 
-const PARALLEL_OPERATIONS = 2
+const PARALLEL_TASKS = 2
 
 type listOfStrings []string
 
@@ -28,8 +29,8 @@ func (list *listOfStrings) String() string {
 func main() {
 	var slackWebhooks listOfStrings
 	flag.Var(&slackWebhooks, "slack-webhook", "Slack webhook URL (can be specified multiple times).")
-	config := flag.String("config", "", "Path to configuration file (TOML).")
-	parallel := flag.Uint("parallel", PARALLEL_OPERATIONS, "Number of parallel operations.")
+	cfgFilePath := flag.String("config", "", "Path to configuration file (TOML).")
+	parallel := flag.Uint("parallel", PARALLEL_TASKS, "Number of tasks to run in parallel.")
 	flag.Parse()
 
 	slack := notifier.NewSlackNotifier(slackWebhooks...)
@@ -44,13 +45,18 @@ func main() {
 		}
 	}()
 
-	Operations, err := backup.LoadConfiguration(*config)
+	tasksDfn, err := config.LoadConfiguration(*cfgFilePath)
+	if err != nil {
+		panic(err)
+	}
+
+	tasks, err := backup.NewTasksList(tasksDfn)
 	if err != nil {
 		panic(err)
 	}
 
 	now := time.Now()
-	results := Operations.Run(now, *parallel)
+	results := tasks.Run(now, *parallel)
 	sort.Sort(results)
 	if err := slack.Notify(results...); err != nil {
 		panic(err)
