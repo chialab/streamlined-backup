@@ -1,4 +1,4 @@
-package backup
+package notifier
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/chialab/streamlined-backup/backup"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -16,15 +17,15 @@ func TestSlackFormat(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	testCases := map[string]struct {
-		input    *OperationResult
+		input    *backup.OperationResult
 		expected map[string]interface{}
 	}{
 		"skipped": {
-			input:    &OperationResult{Status: StatusSkipped},
+			input:    &backup.OperationResult{Status: backup.StatusSkipped},
 			expected: nil,
 		},
 		"success": {
-			input: &OperationResult{Status: StatusSuccess, Operation: &Operation{Name: "foo"}},
+			input: &backup.OperationResult{Status: backup.StatusSuccess, Operation: &backup.Operation{Name: "foo"}},
 			expected: map[string]interface{}{
 				"type": "section",
 				"text": map[string]string{
@@ -34,11 +35,11 @@ func TestSlackFormat(t *testing.T) {
 			},
 		},
 		"failure": {
-			input: &OperationResult{
-				Status:    StatusFailure,
+			input: &backup.OperationResult{
+				Status:    backup.StatusFailure,
 				Error:     fmt.Errorf("test error"),
 				Logs:      []string{"test log 1", "test log 2", ""},
-				Operation: &Operation{Name: "bar", Command: []string{"echo", "foo bar"}, Cwd: tmpDir},
+				Operation: &backup.Operation{Name: "bar", Command: []string{"echo", "foo bar"}, Cwd: tmpDir},
 			},
 			expected: map[string]interface{}{
 				"type": "section",
@@ -78,9 +79,9 @@ func TestSlackFormat(t *testing.T) {
 }
 
 func TestSlackNotify(t *testing.T) {
-	results := []OperationResult{
-		{Status: StatusSkipped},
-		{Status: StatusSuccess, Operation: &Operation{Name: "foo"}},
+	results := []backup.OperationResult{
+		{Status: backup.StatusSkipped},
+		{Status: backup.StatusSuccess, Operation: &backup.Operation{Name: "foo"}},
 	}
 	expectedBody := fmt.Sprintf(
 		`{"blocks":[{"text":{"text":":white_check_mark: Backup operation %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",
@@ -136,9 +137,9 @@ func TestSlackNotify(t *testing.T) {
 }
 
 func TestSlackNotifyError(t *testing.T) {
-	results := []OperationResult{
-		{Status: StatusSkipped},
-		{Status: StatusSuccess, Operation: &Operation{Name: "foo"}},
+	results := []backup.OperationResult{
+		{Status: backup.StatusSkipped},
+		{Status: backup.StatusSuccess, Operation: &backup.Operation{Name: "foo"}},
 	}
 	expectedBody := fmt.Sprintf(
 		`{"blocks":[{"text":{"text":":white_check_mark: Backup operation %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",

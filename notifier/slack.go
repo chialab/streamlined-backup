@@ -1,4 +1,4 @@
-package backup
+package notifier
 
 import (
 	"bytes"
@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/chialab/streamlined-backup/backup"
 	"github.com/hashicorp/go-multierror"
 )
 
 type SlackNotifier struct {
-	Notifier
 	webhooks []string
 }
 
@@ -20,9 +20,9 @@ func NewSlackNotifier(webhooks ...string) *SlackNotifier {
 	return &SlackNotifier{webhooks: webhooks}
 }
 
-func (n SlackNotifier) Format(o *OperationResult) map[string]interface{} {
+func (n SlackNotifier) Format(o *backup.OperationResult) map[string]interface{} {
 	switch o.Status {
-	case StatusSuccess:
+	case backup.StatusSuccess:
 		return map[string]interface{}{
 			"type": "section",
 			"text": map[string]string{
@@ -31,7 +31,7 @@ func (n SlackNotifier) Format(o *OperationResult) map[string]interface{} {
 			},
 		}
 
-	case StatusFailure:
+	case backup.StatusFailure:
 		return map[string]interface{}{
 			"type": "section",
 			"text": map[string]string{
@@ -62,7 +62,7 @@ func (n SlackNotifier) Format(o *OperationResult) map[string]interface{} {
 	return nil
 }
 
-func (n SlackNotifier) Notify(results ...OperationResult) error {
+func (n SlackNotifier) Notify(results ...backup.OperationResult) error {
 	type payload struct {
 		Blocks []interface{} `json:"blocks"`
 	}

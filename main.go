@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/chialab/streamlined-backup/backup"
+	"github.com/chialab/streamlined-backup/notifier"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -30,7 +31,7 @@ func main() {
 	parallel := flag.Uint("parallel", PARALLEL_OPERATIONS, "Number of parallel operations.")
 	flag.Parse()
 
-	slack := backup.NewSlackNotifier(slackWebhooks...)
+	slack := notifier.NewSlackNotifier(slackWebhooks...)
 	defer func() {
 		if panicked := recover(); panicked != nil {
 			err := backup.ToError(panicked)

@@ -12,11 +12,6 @@ type Handler interface {
 	LastRun() (time.Time, error)
 }
 
-type Notifier interface {
-	Notify(...OperationResult) error
-	Error(interface{}) error
-}
-
 func ToError(val interface{}) error {
 	if err, ok := val.(error); ok {
 		return err
