@@ -14,7 +14,7 @@ func TestOperationResultAccessors(t *testing.T) {
 	}
 
 	t.Run("without_operation", func(t *testing.T) {
-		result := &OperationResult{}
+		result := &Result{}
 
 		if name := result.Name(); name != UNKNOWN_OPERATION {
 			t.Errorf("expected %s, got %s", UNKNOWN_OPERATION, name)
@@ -30,7 +30,7 @@ func TestOperationResultAccessors(t *testing.T) {
 	t.Run("with_operation", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
-		result := &OperationResult{
+		result := &Result{
 			Operation: &Operation{
 				Name: "test",
 				Command: []string{

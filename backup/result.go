@@ -27,14 +27,14 @@ func (status OperationStatus) Priority() uint {
 
 const UNKNOWN_OPERATION = "(unknown)"
 
-type OperationResult struct {
+type Result struct {
 	Status    OperationStatus
 	Operation *Operation
 	Logs      []string
 	Error     error
 }
 
-func (r OperationResult) Name() string {
+func (r Result) Name() string {
 	if r.Operation == nil {
 		return UNKNOWN_OPERATION
 	}
@@ -42,7 +42,7 @@ func (r OperationResult) Name() string {
 	return r.Operation.Name
 }
 
-func (r OperationResult) Command() string {
+func (r Result) Command() string {
 	if r.Operation == nil || r.Operation.Command == nil {
 		return UNKNOWN_OPERATION
 	}
@@ -50,7 +50,7 @@ func (r OperationResult) Command() string {
 	return shellescape.QuoteCommand(r.Operation.Command)
 }
 
-func (r OperationResult) ActualCwd() string {
+func (r Result) ActualCwd() string {
 	if r.Operation == nil || r.Operation.Cwd == "" {
 		if cwd, err := os.Getwd(); err == nil {
 			return cwd
@@ -62,7 +62,7 @@ func (r OperationResult) ActualCwd() string {
 	return r.Operation.Cwd
 }
 
-type OperationResults []OperationResult
+type OperationResults []Result
 
 func (o OperationResults) Len() int {
 	return len(o)

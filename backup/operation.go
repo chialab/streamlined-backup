@@ -23,7 +23,7 @@ type Operation struct {
 }
 
 type OperationInterface interface {
-	Run(now time.Time) (result OperationResult)
+	Run(now time.Time) (result Result)
 }
 
 func (o Operation) ShouldRun(now time.Time) (bool, error) {
@@ -39,8 +39,8 @@ func (o Operation) ShouldRun(now time.Time) (bool, error) {
 	return o.Schedule.Next(lastRun).Before(now), nil
 }
 
-func (o Operation) Run(now time.Time) (result OperationResult) {
-	result = OperationResult{Operation: &o}
+func (o Operation) Run(now time.Time) (result Result) {
+	result = Result{Operation: &o}
 	if run, err := o.ShouldRun(now); err != nil {
 		o.logger.Printf("ERROR (Could not find last run): %s", err)
 		result.Status = StatusFailure

@@ -20,7 +20,7 @@ func NewSlackNotifier(webhooks ...string) *SlackNotifier {
 	return &SlackNotifier{webhooks: webhooks}
 }
 
-func (n SlackNotifier) Format(o *backup.OperationResult) map[string]interface{} {
+func (n SlackNotifier) Format(o *backup.Result) map[string]interface{} {
 	switch o.Status {
 	case backup.StatusSuccess:
 		return map[string]interface{}{
@@ -62,7 +62,7 @@ func (n SlackNotifier) Format(o *backup.OperationResult) map[string]interface{} 
 	return nil
 }
 
-func (n SlackNotifier) Notify(results ...backup.OperationResult) error {
+func (n SlackNotifier) Notify(results ...backup.Result) error {
 	type payload struct {
 		Blocks []interface{} `json:"blocks"`
 	}

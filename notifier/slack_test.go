@@ -17,15 +17,15 @@ func TestSlackFormat(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	testCases := map[string]struct {
-		input    *backup.OperationResult
+		input    *backup.Result
 		expected map[string]interface{}
 	}{
 		"skipped": {
-			input:    &backup.OperationResult{Status: backup.StatusSkipped},
+			input:    &backup.Result{Status: backup.StatusSkipped},
 			expected: nil,
 		},
 		"success": {
-			input: &backup.OperationResult{Status: backup.StatusSuccess, Operation: &backup.Operation{Name: "foo"}},
+			input: &backup.Result{Status: backup.StatusSuccess, Operation: &backup.Operation{Name: "foo"}},
 			expected: map[string]interface{}{
 				"type": "section",
 				"text": map[string]string{
@@ -35,7 +35,7 @@ func TestSlackFormat(t *testing.T) {
 			},
 		},
 		"failure": {
-			input: &backup.OperationResult{
+			input: &backup.Result{
 				Status:    backup.StatusFailure,
 				Error:     fmt.Errorf("test error"),
 				Logs:      []string{"test log 1", "test log 2", ""},
@@ -79,7 +79,7 @@ func TestSlackFormat(t *testing.T) {
 }
 
 func TestSlackNotify(t *testing.T) {
-	results := []backup.OperationResult{
+	results := []backup.Result{
 		{Status: backup.StatusSkipped},
 		{Status: backup.StatusSuccess, Operation: &backup.Operation{Name: "foo"}},
 	}
@@ -137,7 +137,7 @@ func TestSlackNotify(t *testing.T) {
 }
 
 func TestSlackNotifyError(t *testing.T) {
-	results := []backup.OperationResult{
+	results := []backup.Result{
 		{Status: backup.StatusSkipped},
 		{Status: backup.StatusSuccess, Operation: &backup.Operation{Name: "foo"}},
 	}
