@@ -1,6 +1,7 @@
 package notifier
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -136,6 +137,49 @@ func TestSlackNotify(t *testing.T) {
 	}
 }
 
+func TestSlackNotifyEmpty(t *testing.T) {
+	results := []backup.Result{
+		{Status: backup.StatusSkipped},
+		{Status: backup.StatusSkipped},
+	}
+
+	requests := []struct {
+		method      string
+		contentType string
+		body        string
+	}{}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if body, err := ioutil.ReadAll(r.Body); err != nil {
+			panic(err)
+		} else {
+			requests = append(requests, struct {
+				method      string
+				contentType string
+				body        string
+			}{
+				method:      r.Method,
+				contentType: r.Header.Get("Content-Type"),
+				body:        string(body),
+			})
+		}
+
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte(`{"ok": true}`)); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer ts.Close()
+
+	notifier := NewSlackNotifier(ts.URL)
+
+	if err := notifier.Notify(results...); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if len(requests) != 0 {
+		t.Errorf("expected 0 requests, got %d", len(requests))
+	}
+}
+
 func TestSlackNotifyError(t *testing.T) {
 	results := []backup.Result{
 		{Status: backup.StatusSkipped},
@@ -195,6 +239,61 @@ func TestSlackNotifyError(t *testing.T) {
 		t.Errorf("expected 2 errors, got %d", len(merr.Errors))
 	}
 	if len(requests) != 2 {
+		t.Errorf("expected 1 request, got %d", len(requests))
+	}
+	for _, req := range requests {
+		if req.method != "POST" {
+			t.Errorf("expected POST request, got %s", req.method)
+		}
+		if req.contentType != "application/json" {
+			t.Errorf("expected Content-Type: application/json, got %s", req.contentType)
+		}
+		if req.body != expectedBody {
+			t.Errorf("expected body %s, got %s", expectedBody, req.body)
+		}
+	}
+}
+
+func TestSlackError(t *testing.T) {
+	err := errors.New("test error")
+	expectedBody := fmt.Sprintf(
+		`{"blocks":[{"text":{"text":":rotating_light: *Error running backup task!* @channel\n%s","type":"mrkdwn"},"type":"section"}]}`+"\n",
+		"```\\ntest error\\n```",
+	)
+
+	requests := []struct {
+		method      string
+		contentType string
+		body        string
+	}{}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if body, err := ioutil.ReadAll(r.Body); err != nil {
+			panic(err)
+		} else {
+			requests = append(requests, struct {
+				method      string
+				contentType string
+				body        string
+			}{
+				method:      r.Method,
+				contentType: r.Header.Get("Content-Type"),
+				body:        string(body),
+			})
+		}
+
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte(`{"ok": true}`)); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer ts.Close()
+
+	notifier := NewSlackNotifier(ts.URL)
+
+	if err := notifier.Error(err); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if len(requests) != 1 {
 		t.Errorf("expected 1 request, got %d", len(requests))
 	}
 	for _, req := range requests {

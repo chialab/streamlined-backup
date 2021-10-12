@@ -82,10 +82,14 @@ func (n SlackNotifier) Notify(results ...backup.Result) error {
 
 func (n SlackNotifier) Error(err error) error {
 	body := map[string]interface{}{
-		"type": "section",
-		"text": map[string]string{
-			"type": "mrkdwn",
-			"text": fmt.Sprintf(":rotating_light: *Error running backup task!* @channel\n```\n%v\n```", err),
+		"blocks": []map[string]interface{}{
+			{
+				"type": "section",
+				"text": map[string]string{
+					"type": "mrkdwn",
+					"text": fmt.Sprintf(":rotating_light: *Error running backup task!* @channel\n```\n%v\n```", err),
+				},
+			},
 		},
 	}
 
@@ -93,10 +97,7 @@ func (n SlackNotifier) Error(err error) error {
 }
 
 func (n SlackNotifier) Send(body interface{}) error {
-	jsonBody, err := ToJSON(body)
-	if err != nil {
-		return err
-	}
+	jsonBody := MustToJSON(body)
 
 	wg := sync.WaitGroup{}
 	mutex := sync.Mutex{}

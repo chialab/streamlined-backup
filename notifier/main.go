@@ -12,11 +12,11 @@ type Notifier interface {
 	Error(interface{}) error
 }
 
-func ToJSON(val interface{}) ([]byte, error) {
+func MustToJSON(val interface{}) []byte {
 	buf := bytes.NewBuffer(nil)
 	if err := json.NewEncoder(buf).Encode(val); err != nil {
-		return nil, err
+		panic(err)
 	}
 
-	return buf.Bytes(), nil
+	return buf.Bytes()
 }
