@@ -64,7 +64,7 @@ func (n SlackNotifier) Format(o *OperationResult) map[string]interface{} {
 
 func (n SlackNotifier) Notify(results ...OperationResult) error {
 	type payload struct {
-		Blocks []interface{}
+		Blocks []interface{} `json:"blocks"`
 	}
 
 	body := payload{}
