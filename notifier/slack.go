@@ -2,7 +2,6 @@ package notifier
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -74,8 +73,28 @@ func (n SlackNotifier) Notify(results ...backup.Result) error {
 		}
 	}
 
-	buf := bytes.NewBuffer(nil)
-	if err := json.NewEncoder(buf).Encode(body); err != nil {
+	if len(body.Blocks) == 0 {
+		return nil
+	}
+
+	return n.Send(body)
+}
+
+func (n SlackNotifier) Error(err error) error {
+	body := map[string]interface{}{
+		"type": "section",
+		"text": map[string]string{
+			"type": "mrkdwn",
+			"text": fmt.Sprintf(":rotating_light: *Error running backup task!* @channel\n```\n%v\n```", err),
+		},
+	}
+
+	return n.Send(body)
+}
+
+func (n SlackNotifier) Send(body interface{}) error {
+	jsonBody, err := ToJSON(body)
+	if err != nil {
 		return err
 	}
 
@@ -87,7 +106,7 @@ func (n SlackNotifier) Notify(results ...backup.Result) error {
 		go func(url string) {
 			defer wg.Done()
 
-			body := bytes.NewBuffer(buf.Bytes())
+			body := bytes.NewBuffer(jsonBody)
 
 			response, err := http.Post(url, "application/json", body)
 			if err != nil {
