@@ -2,6 +2,7 @@ package backup
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -81,10 +82,30 @@ func TestSlackNotify(t *testing.T) {
 		{Status: StatusSkipped},
 		{Status: StatusSuccess, Operation: &Operation{Name: "foo"}},
 	}
+	expectedBody := fmt.Sprintf(
+		`{"blocks":[{"text":{"text":":white_check_mark: Backup operation %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",
+		"`foo`",
+	)
 
-	requests := []*http.Request{}
+	requests := []struct {
+		method      string
+		contentType string
+		body        string
+	}{}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r)
+		if body, err := ioutil.ReadAll(r.Body); err != nil {
+			panic(err)
+		} else {
+			requests = append(requests, struct {
+				method      string
+				contentType string
+				body        string
+			}{
+				method:      r.Method,
+				contentType: r.Header.Get("Content-Type"),
+				body:        string(body),
+			})
+		}
 
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte(`{"ok": true}`)); err != nil {
@@ -102,11 +123,14 @@ func TestSlackNotify(t *testing.T) {
 		t.Errorf("expected 1 request, got %d", len(requests))
 	}
 	for _, req := range requests {
-		if req.Method != "POST" {
-			t.Errorf("expected POST request, got %s", req.Method)
+		if req.method != "POST" {
+			t.Errorf("expected POST request, got %s", req.method)
 		}
-		if req.Header["Content-Type"][0] != "application/json" {
-			t.Errorf("expected Content-Type: application/json, got %s", req.Header["Content-Type"][0])
+		if req.contentType != "application/json" {
+			t.Errorf("expected Content-Type: application/json, got %s", req.contentType)
+		}
+		if req.body != expectedBody {
+			t.Errorf("expected body %s, got %s", expectedBody, req.body)
 		}
 	}
 }
@@ -116,13 +140,34 @@ func TestSlackNotifyError(t *testing.T) {
 		{Status: StatusSkipped},
 		{Status: StatusSuccess, Operation: &Operation{Name: "foo"}},
 	}
+	expectedBody := fmt.Sprintf(
+		`{"blocks":[{"text":{"text":":white_check_mark: Backup operation %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",
+		"`foo`",
+	)
 
 	mutex := &sync.Mutex{}
-	requests := []*http.Request{}
+	requests := []struct {
+		method      string
+		contentType string
+		body        string
+	}{}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mutex.Lock()
 		defer mutex.Unlock()
-		requests = append(requests, r)
+
+		if body, err := ioutil.ReadAll(r.Body); err != nil {
+			panic(err)
+		} else {
+			requests = append(requests, struct {
+				method      string
+				contentType string
+				body        string
+			}{
+				method:      r.Method,
+				contentType: r.Header.Get("Content-Type"),
+				body:        string(body),
+			})
+		}
 
 		switch r.URL.Path {
 		case "/foo":
@@ -152,11 +197,14 @@ func TestSlackNotifyError(t *testing.T) {
 		t.Errorf("expected 1 request, got %d", len(requests))
 	}
 	for _, req := range requests {
-		if req.Method != "POST" {
-			t.Errorf("expected POST request, got %s", req.Method)
+		if req.method != "POST" {
+			t.Errorf("expected POST request, got %s", req.method)
 		}
-		if req.Header["Content-Type"][0] != "application/json" {
-			t.Errorf("expected Content-Type: application/json, got %s", req.Header["Content-Type"][0])
+		if req.contentType != "application/json" {
+			t.Errorf("expected Content-Type: application/json, got %s", req.contentType)
+		}
+		if req.body != expectedBody {
+			t.Errorf("expected body %s, got %s", expectedBody, req.body)
 		}
 	}
 }
