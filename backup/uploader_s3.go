@@ -3,20 +3,18 @@ package backup
 import (
 	"crypto/md5"
 	"encoding/base64"
-	"errors"
-	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/session"
-	S3 "github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/hashicorp/go-multierror"
 )
-
-const timeFormat = "20060102150405"
 
 type s3UploadedPart struct {
 	PartNumber int64
@@ -36,210 +34,201 @@ func (p s3UploadedParts) Less(i, j int) bool {
 	return p[i].PartNumber < p[j].PartNumber
 }
 
-type S3Handler struct {
-	bucket      string
-	path        string
-	initialized bool
-	client      *S3.S3
-	completion  chan error
+type s3MultipartUpload struct {
+	UploadId string
+	Bucket   string
+	Key      string
+	Parts    chan s3UploadedPart
+	Error    error
 }
 
-func newS3Handler(destination Destination, timestamp time.Time) *S3Handler {
+func newS3Handler(destination Destination) *S3Handler {
 	session := session.Must(session.NewSession())
-	client := S3.New(session, &aws.Config{
+	client := s3.New(session, &aws.Config{
 		Retryer: &client.DefaultRetryer{NumMaxRetries: 3},
 		Region:  aws.String(destination.Region),
 	})
 
 	return &S3Handler{
-		bucket:     destination.Bucket,
-		path:       fmt.Sprintf("%s%s%s", destination.Prefix, timestamp.Format(timeFormat), destination.Suffix),
-		client:     client,
-		completion: make(chan error, 1),
+		client:      client,
+		destination: destination,
 	}
 }
 
-func (s3 *S3Handler) Handler(chunks chan Chunk) {
-	uploadId, err := s3.initMultipartUpload()
+type S3Handler struct {
+	client      s3iface.S3API
+	destination Destination
+}
+
+func (h S3Handler) Handler(chunks <-chan Chunk, timestamp time.Time) (func() error, error) {
+	upload, err := h.initMultipartUpload(timestamp)
 	if err != nil {
-		s3.completion <- err
-
-		return
+		return nil, err
 	}
 
-	parts := make(s3UploadedParts, 0)
-	uploads := make([]chan s3UploadedPart, 0)
+	go func() {
+		wg := sync.WaitGroup{}
+		partNumber := int64(1)
+		for chunk := range chunks {
+			if chunk.Error != nil {
+				upload.Error = chunk.Error
 
-	var chunk Chunk
-	for !chunk.Done {
-		chunk = <-chunks
-		if chunk.Error != nil {
-			break
+				break
+			}
+
+			wg.Add(1)
+			go func(partNumber int64, chunk Chunk) {
+				defer wg.Done()
+
+				upload.Parts <- h.uploadPart(upload, partNumber, chunk)
+			}(partNumber, chunk)
+			partNumber++
 		}
-		if chunk.Done && len(chunk.Data) == 0 {
-			continue
+		wg.Wait()
+		close(upload.Parts)
+	}()
+
+	return func() (err error) {
+		// Wait for all pending uploads to finish
+		parts := make(s3UploadedParts, 0)
+		for part := range upload.Parts {
+			parts = append(parts, part)
 		}
 
-		ch := make(chan s3UploadedPart, 1)
-		uploads = append(uploads, ch)
-		partNumber := int64(len(uploads))
-		go func(ch chan s3UploadedPart, partNumber int64, chunk Chunk) {
-			ch <- s3.uploadPart(uploadId, partNumber, chunk)
-		}(ch, partNumber, chunk)
+		defer func() {
+			// Abort the upload if any error occurred
+			if panic := recover(); panic != nil {
+				var multiErr *multierror.Error
+				if panicErr, ok := panic.(error); ok {
+					multiErr = multierror.Append(multiErr, panicErr)
+				}
+				if abortErr := h.abortMultipartUpload(upload); abortErr != nil {
+					multiErr = multierror.Append(multiErr, abortErr)
+				}
+
+				err = multiErr.ErrorOrNil()
+			}
+		}()
+
+		if upload.Error != nil {
+			panic(upload.Error)
+		} else if err := h.completeMultipartUpload(upload, parts); err != nil {
+			panic(err)
+		}
+
+		return nil
+	}, nil
+}
+
+func (h S3Handler) initMultipartUpload(timestamp time.Time) (*s3MultipartUpload, error) {
+	key := h.destination.Key(timestamp)
+	input := &s3.CreateMultipartUploadInput{
+		Bucket: aws.String(h.destination.Bucket),
+		Key:    aws.String(key),
 	}
-
-	s3.waitUntilUploadsComplete(uploads, &parts)
-	if chunk.Error != nil {
-		if abortErr := s3.abortMultipartUpload(uploadId); err != nil {
-			s3.completion <- multierror.Append(chunk.Error, abortErr)
-		} else {
-			s3.completion <- chunk.Error
-		}
-	} else if err := s3.completeMultipartUpload(uploadId, parts); err != nil {
-		if abortErr := s3.abortMultipartUpload(uploadId); err != nil {
-			s3.completion <- multierror.Append(err, abortErr)
-		} else {
-			s3.completion <- err
-		}
+	if result, err := h.client.CreateMultipartUpload(input); err != nil {
+		return nil, err
 	} else {
-		s3.completion <- nil
+		return &s3MultipartUpload{
+			UploadId: *result.UploadId,
+			Bucket:   h.destination.Bucket,
+			Key:      key,
+			Parts:    make(chan s3UploadedPart),
+		}, nil
 	}
 }
 
-func (s3 *S3Handler) Wait() error {
-	if err := <-s3.completion; err != nil {
-		return err
-	}
+func (h S3Handler) uploadPart(upload *s3MultipartUpload, partNumber int64, chunk Chunk) s3UploadedPart {
+	hash := md5.New()
+	hash.Write(chunk.Data)
+	md5sum := base64.StdEncoding.EncodeToString(hash.Sum(nil))
 
-	return nil
-}
-
-func (s3 *S3Handler) initMultipartUpload() (string, error) {
-	if s3.initialized {
-		return "", errors.New("already initialized")
-	}
-
-	result, err := s3.client.CreateMultipartUpload(&S3.CreateMultipartUploadInput{
-		Bucket: aws.String(s3.bucket),
-		Key:    aws.String(s3.path),
-	})
-	if err != nil {
-		return "", err
-	}
-
-	s3.initialized = true
-
-	return *result.UploadId, nil
-}
-
-func (s3 *S3Handler) uploadPart(uploadId string, partNumber int64, chunk Chunk) s3UploadedPart {
-	h := md5.New()
-	h.Write(chunk.Data)
-	hash := base64.StdEncoding.EncodeToString(h.Sum(nil))
-
-	result, err := s3.client.UploadPart(&S3.UploadPartInput{
-		Bucket:        aws.String(s3.bucket),
-		Key:           aws.String(s3.path),
-		UploadId:      aws.String(uploadId),
+	input := &s3.UploadPartInput{
+		Bucket:        aws.String(upload.Bucket),
+		Key:           aws.String(upload.Key),
+		UploadId:      aws.String(upload.UploadId),
 		Body:          chunk.NewReader(),
 		PartNumber:    aws.Int64(partNumber),
 		ContentLength: aws.Int64(int64(len(chunk.Data))),
-		ContentMD5:    aws.String(hash),
-	})
-	if err != nil {
+		ContentMD5:    aws.String(md5sum),
+	}
+	if result, err := h.client.UploadPart(input); err != nil {
 		return s3UploadedPart{Error: err, PartNumber: partNumber}
+	} else {
+		return s3UploadedPart{PartNumber: partNumber, ETag: *result.ETag}
 	}
 
-	return s3UploadedPart{PartNumber: partNumber, ETag: *result.ETag}
 }
 
-func (s3 *S3Handler) waitUntilUploadsComplete(uploads []chan s3UploadedPart, parts *s3UploadedParts) {
-	for _, upload := range uploads {
-		*parts = append(*parts, <-upload)
+func (h S3Handler) abortMultipartUpload(upload *s3MultipartUpload) error {
+	input := &s3.AbortMultipartUploadInput{
+		Bucket:   aws.String(upload.Bucket),
+		Key:      aws.String(upload.Key),
+		UploadId: aws.String(upload.UploadId),
 	}
-}
-
-func (s3 *S3Handler) abortMultipartUpload(uploadId string) error {
-	_, err := s3.client.AbortMultipartUpload(&S3.AbortMultipartUploadInput{
-		Bucket:   aws.String(s3.bucket),
-		Key:      aws.String(s3.path),
-		UploadId: aws.String(uploadId),
-	})
-
-	if err != nil {
+	if _, err := h.client.AbortMultipartUpload(input); err != nil {
 		return err
 	}
-
-	s3.initialized = false
 
 	return nil
 }
 
-func (s3 *S3Handler) completeMultipartUpload(uploadId string, uploadedParts s3UploadedParts) error {
-	parts := make([]*S3.CompletedPart, 0)
+func (h S3Handler) completeMultipartUpload(upload *s3MultipartUpload, uploadedParts s3UploadedParts) error {
+	parts := make([]*s3.CompletedPart, 0)
 	sort.Sort(uploadedParts)
 	for _, part := range uploadedParts {
 		if part.Error != nil {
 			return part.Error
 		}
 
-		parts = append(parts, &S3.CompletedPart{
+		parts = append(parts, &s3.CompletedPart{
 			PartNumber: aws.Int64(part.PartNumber),
 			ETag:       aws.String(part.ETag),
 		})
 	}
 
-	_, err := s3.client.CompleteMultipartUpload(&S3.CompleteMultipartUploadInput{
-		Bucket:          aws.String(s3.bucket),
-		Key:             aws.String(s3.path),
-		UploadId:        aws.String(uploadId),
-		MultipartUpload: &S3.CompletedMultipartUpload{Parts: parts},
-	})
-
-	if err != nil {
+	input := &s3.CompleteMultipartUploadInput{
+		Bucket:          aws.String(upload.Bucket),
+		Key:             aws.String(upload.Key),
+		UploadId:        aws.String(upload.UploadId),
+		MultipartUpload: &s3.CompletedMultipartUpload{Parts: parts},
+	}
+	if _, err := h.client.CompleteMultipartUpload(input); err != nil {
 		return err
 	}
-
-	s3.initialized = false
 
 	return nil
 }
 
-func (s3 *S3Handler) LastRun(destination Destination) (time.Time, error) {
-	var lastKey *string
+func (h S3Handler) LastRun() (time.Time, error) {
+	var marker *string
 	var lastRun time.Time
 	for {
-		result, err := s3.client.ListObjects(&S3.ListObjectsInput{
-			Bucket: aws.String(destination.Bucket),
-			Prefix: aws.String(destination.Prefix),
-			Marker: lastKey,
+		result, err := h.client.ListObjects(&s3.ListObjectsInput{
+			Bucket: aws.String(h.destination.Bucket),
+			Prefix: aws.String(h.destination.Prefix),
+			Marker: marker,
 		})
 		if err != nil {
 			return time.Time{}, err
 		}
 
-		if len(result.Contents) == 0 {
-			break
-		}
-
 		for _, object := range result.Contents {
-			if !strings.HasPrefix(*object.Key, destination.Prefix) || !strings.HasSuffix(*object.Key, destination.Suffix) {
+			if !strings.HasPrefix(*object.Key, h.destination.Prefix) || !strings.HasSuffix(*object.Key, h.destination.Suffix) {
 				continue
 			}
 
-			run, err := time.Parse(
-				timeFormat,
-				strings.TrimSuffix(strings.TrimPrefix(*object.Key, destination.Prefix), destination.Suffix),
-			)
-			if err != nil {
+			if run, err := h.destination.ParseTimestamp(*object.Key); err != nil {
 				continue
-			}
-			if run.After(lastRun) {
+			} else if run.After(lastRun) {
 				lastRun = run
 			}
 		}
 
-		lastKey = result.Contents[len(result.Contents)-1].Key
+		marker = result.NextMarker
+		if marker == nil {
+			break
+		}
 	}
 
 	return lastRun, nil

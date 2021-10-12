@@ -1,79 +1,56 @@
 package main
 
 import (
-	"log"
+	"flag"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/chialab/streamlined-backup/backup"
+	"github.com/hashicorp/go-multierror"
 )
 
 const PARALLEL_OPERATIONS = 2
 
-func main() {
-	Notifications, Operations := backup.MustLoadConfiguration()
-	now := time.Now()
+type listOfStrings []string
 
-	pool := make(chan bool, PARALLEL_OPERATIONS)
-	successes := make([]backup.OperationResult, 0)
-	for name, op := range *Operations {
-		pool <- true
-		go func(name string, op backup.Operation) {
-			defer func() { <-pool }()
+func (list *listOfStrings) Set(value string) error {
+	*list = append(*list, value)
 
-			result := run(name, op, now)
-			switch result.Status {
-			case backup.StatusSuccess:
-				successes = append(successes, *result)
-			case backup.StatusFailure:
-				if err := Notifications.Notify(*result); err != nil {
-					log.Printf("[%s] FAIL: %s", name, err)
-				}
-			}
-		}(name, op)
-	}
-	for i := 0; i < cap(pool); i++ {
-		pool <- true
-	}
-
-	if len(successes) > 0 {
-		if err := Notifications.Notify(successes...); err != nil {
-			log.Printf("FAIL: %s", err)
-		}
-	}
+	return nil
+}
+func (list *listOfStrings) String() string {
+	return strings.Join(*list, ",")
 }
 
-func run(name string, op backup.Operation, now time.Time) *backup.OperationResult {
-	handler, err := backup.NewHandler(op.Destination, now)
-	if err != nil {
-		log.Printf("[%s] FAIL: %s", name, err)
+func main() {
+	var slackWebhooks listOfStrings
+	flag.Var(&slackWebhooks, "slack-webhook", "Slack webhook URL (can be specified multiple times).")
+	config := flag.String("config", "", "Path to configuration file (TOML).")
+	parallel := flag.Uint("parallel", PARALLEL_OPERATIONS, "Number of parallel operations.")
+	flag.Parse()
 
-		return &backup.OperationResult{Name: name, Error: err, Status: backup.StatusFailure, Operation: &op}
-	}
+	slack := backup.NewSlackNotifier(slackWebhooks...)
+	defer func() {
+		if panicked := recover(); panicked != nil {
+			err := backup.ToError(panicked)
+			if notifyErr := slack.Error(err); notifyErr != nil {
+				panic(multierror.Append(err, notifyErr))
+			}
 
-	if shouldRun, err := op.ShouldRun(handler, now); err != nil {
-		log.Printf("[%s] FAIL: %s", name, err)
-
-		return &backup.OperationResult{Name: name, Error: err, Status: backup.StatusFailure, Operation: &op}
-	} else if !shouldRun {
-		log.Printf("[%s] SKIP", name)
-
-		return &backup.OperationResult{Name: name, Status: backup.StatusSkipped, Operation: &op}
-	}
-
-	logLines := make([]string, 0)
-	err = op.Run(handler, func(msg string) {
-		logLines = append(logLines, msg)
-	})
-	if err != nil {
-		for _, line := range logLines {
-			log.Printf("[%s] STDERR: %s", name, line)
+			panic(err)
 		}
-		log.Printf("[%s] FAIL: %s", name, err)
+	}()
 
-		return &backup.OperationResult{Name: name, Error: err, Status: backup.StatusFailure, Operation: &op, Logs: logLines}
+	Operations, err := backup.LoadConfiguration(*config)
+	if err != nil {
+		panic(err)
 	}
 
-	log.Printf("[%s] SUCCESS", name)
-
-	return &backup.OperationResult{Name: name, Status: backup.StatusSuccess, Operation: &op, Logs: logLines}
+	now := time.Now()
+	results := Operations.Run(now, *parallel)
+	sort.Sort(results)
+	if err := slack.Notify(results...); err != nil {
+		panic(err)
+	}
 }

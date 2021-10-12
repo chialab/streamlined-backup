@@ -2,7 +2,6 @@ package backup
 
 import (
 	"testing"
-	"time"
 )
 
 func TestNewHandlerS3(t *testing.T) {
@@ -11,7 +10,7 @@ func TestNewHandlerS3(t *testing.T) {
 	dest := Destination{
 		Type: "s3",
 	}
-	if handler, err := NewHandler(dest, time.Now()); err != nil {
+	if handler, err := NewHandler(dest); err != nil {
 		t.Errorf("unepected error: %s", err)
 	} else if handler == nil {
 		t.Errorf("expected handler, got nil")
@@ -24,7 +23,7 @@ func TestNewHandlerUnknown(t *testing.T) {
 	dest := Destination{
 		Type: "invalid",
 	}
-	if handler, err := NewHandler(dest, time.Now()); err == nil {
+	if handler, err := NewHandler(dest); err == nil {
 		t.Error("expected error, got nil")
 	} else if handler != nil {
 		t.Error("unepected handler")

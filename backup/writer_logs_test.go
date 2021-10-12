@@ -1,59 +1,102 @@
 package backup
 
 import (
+	"bytes"
+	"log"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-func newTestLogFunction() (logFunction, *[]string) {
-	var logs []string
-	return func(msg string) {
-		logs = append(logs, msg)
-	}, &logs
+func newTestLogger() (*log.Logger, func() []string) {
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	lines := func() []string {
+		lines := strings.Split(buf.String(), "\n")
+		if lines[len(lines)-1] == "" {
+			lines = lines[:len(lines)-1]
+		}
+
+		return lines
+	}
+
+	return logger, lines
 }
 
 func TestLogWriter(t *testing.T) {
 	t.Parallel()
 
-	fn, logs := newTestLogFunction()
-	writer := NewLogWriter(fn)
-
-	if b, err := writer.Write([]byte("foo")); err != nil {
-		t.Fatalf("unexpected error: %s", err)
-	} else if b != 3 {
-		t.Errorf("expected 3 bytes written, got %d", b)
-	}
-	if len(*logs) != 0 {
-		t.Error("logs should be empty")
+	type testCase struct {
+		useUnderlyingLogger bool
+		steps               []struct {
+			input    string
+			expected []string
+		}
+		final []string
 	}
 
-	if b, err := writer.Write([]byte("bar\n")); err != nil {
-		t.Fatalf("unexpected error: %s", err)
-	} else if b != 4 {
-		t.Errorf("expected 4 bytes written, got %d", b)
-	}
-	if len(*logs) != 1 {
-		t.Error("logs should have 1 element")
-	} else if firstLog := (*logs)[0]; firstLog != "foobar" {
-		t.Errorf("first log entry should be 'foobar', got %s", firstLog)
+	testCases := map[string]testCase{
+		"no_underlying_logger": {
+			useUnderlyingLogger: false,
+			steps: []struct {
+				input    string
+				expected []string
+			}{
+				{input: "foo", expected: []string{}},
+				{input: "bar\n", expected: []string{"foobar"}},
+				{input: "baz\nbazinga\ngo lang go", expected: []string{"foobar", "baz", "bazinga"}},
+			},
+			final: []string{"foobar", "baz", "bazinga", "go lang go"},
+		},
+		"with_underlying_logger": {
+			useUnderlyingLogger: true,
+			steps: []struct {
+				input    string
+				expected []string
+			}{
+				{input: "foo", expected: []string{}},
+				{input: "bar\n", expected: []string{"foobar"}},
+				{input: "baz\nbazinga\ngo lang go", expected: []string{"foobar", "baz", "bazinga"}},
+			},
+			final: []string{"foobar", "baz", "bazinga", "go lang go"},
+		},
 	}
 
-	if b, err := writer.Write([]byte("baz\nbazinga\ngo lang go")); err != nil {
-		t.Fatalf("unexpected error: %s", err)
-	} else if b != 22 {
-		t.Errorf("expected 22 bytes written, got %d", b)
-	}
-	if len(*logs) != 3 {
-		t.Error("logs should have 3 elements")
-	} else if logs := strings.Join(*logs, "|"); logs != "foobar|baz|bazinga" {
-		t.Errorf("logs should be 'foobar|baz|bazinga', got %s", logs)
-	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			writer := &LogWriter{Lines: []string{}}
+			logger, lines := newTestLogger()
+			if tc.useUnderlyingLogger {
+				writer.logger = logger
+			}
 
-	writer.Close()
+			for _, step := range tc.steps {
+				if b, err := writer.Write([]byte(step.input)); err != nil {
+					t.Fatalf("unexpected error: %s", err)
+				} else if b != len(step.input) {
+					t.Errorf("expected %d bytes written, got %d", len(step.input), b)
+				}
 
-	if len(*logs) != 4 {
-		t.Error("logs should have 4 elements")
-	} else if logs := strings.Join(*logs, "|"); logs != "foobar|baz|bazinga|go lang go" {
-		t.Errorf("logs should be 'foobar|baz|bazinga|go lang go', got %s", logs)
+				if !reflect.DeepEqual(step.expected, writer.Lines) {
+					t.Errorf("expected %#v, got %#v", step.expected, writer.Lines)
+				}
+				if logs := lines(); tc.useUnderlyingLogger {
+					if !reflect.DeepEqual(step.expected, logs) {
+						t.Errorf("expected %#v, got %#v", step.expected, logs)
+					}
+				}
+			}
+
+			writer.Close()
+			if !reflect.DeepEqual(tc.final, writer.Lines) {
+				t.Errorf("expected %#v, got %#v", tc.final, writer.Lines)
+			}
+			if logs := lines(); tc.useUnderlyingLogger {
+				if !reflect.DeepEqual(tc.final, logs) {
+					t.Errorf("expected %#v, got %#v", tc.final, logs)
+				}
+			}
+		})
 	}
 }

@@ -4,17 +4,42 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
 
-type testLastRunner struct {
-	lastRun time.Time
-	err     error
+type testHandler struct {
+	lastRun    time.Time
+	chunks     []Chunk
+	lastRunErr error
+	initErr    error
+	err        error
 }
 
-func (r *testLastRunner) LastRun(Destination) (time.Time, error) {
-	return r.lastRun, r.err
+func (r *testHandler) LastRun() (time.Time, error) {
+	return r.lastRun, r.lastRunErr
+}
+
+func (h *testHandler) Handler(chunks <-chan Chunk, now time.Time) (func() error, error) {
+	if h.initErr != nil {
+		return nil, h.initErr
+	}
+
+	done := make(chan bool, 1)
+	go func() {
+		for chunk := range chunks {
+			h.chunks = append(h.chunks, chunk)
+		}
+
+		done <- true
+	}()
+
+	return func() error {
+		<-done
+
+		return h.err
+	}, nil
 }
 
 func TestShouldRun(t *testing.T) {
@@ -52,10 +77,10 @@ func TestShouldRun(t *testing.T) {
 			if schedule, err = NewSchedule(tc.schedule); err != nil {
 				t.Fatalf("unexpected error: %s", err)
 			}
-			op := &Operation{Schedule: *schedule}
+			handler := &testHandler{lastRun: tc.lastRun}
+			op := &Operation{Schedule: *schedule, handler: handler}
 
-			runner := &testLastRunner{lastRun: tc.lastRun}
-			if result, err := op.ShouldRun(runner, now); err != nil {
+			if result, err := op.ShouldRun(now); err != nil {
 				t.Errorf("unexpected error: %s", err)
 			} else if result != tc.expected {
 				t.Errorf("expected %t, got %t", tc.expected, result)
@@ -74,41 +99,16 @@ func TestShouldRunError(t *testing.T) {
 	if schedule, err = NewSchedule("@daily"); err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
-	op := &Operation{Schedule: *schedule}
-
 	testErr := errors.New("test error")
-	runner := &testLastRunner{err: testErr}
+	handler := &testHandler{lastRunErr: testErr}
+	op := &Operation{Schedule: *schedule, handler: handler}
+
 	now := time.Date(2021, 10, 6, 19, 10, 38, 0, time.Local)
-	if result, err := op.ShouldRun(runner, now); result != false {
+	if result, err := op.ShouldRun(now); result != false {
 		t.Errorf("unexpected result: %t", result)
 	} else if err != testErr {
 		t.Errorf("expected %v, got %v", testErr, err)
 	}
-}
-
-type testHandler struct {
-	chunks []Chunk
-	err    error
-	done   chan bool
-}
-
-func (h *testHandler) Handler(chunks chan Chunk) {
-	var chunk Chunk
-	for !chunk.Done && chunk.Error == nil {
-		chunk = <-chunks
-		h.chunks = append(h.chunks, chunk)
-	}
-	h.done <- true
-}
-func (h *testHandler) Wait() error {
-	<-h.done
-
-	return h.err
-}
-func newTestHandler() *testHandler {
-	done := make(chan bool, 1)
-
-	return &testHandler{done: done}
 }
 
 func TestRun(t *testing.T) {
@@ -121,19 +121,19 @@ func TestRun(t *testing.T) {
 		tmpDir = actualPath
 	}
 
+	handler := &testHandler{}
+	logger, lines := newTestLogger()
 	op := &Operation{
 		Command: []string{"bash", "-c", "echo $FOO; pwd; echo logging >&2"},
 		Cwd:     tmpDir,
 		Env:     []string{"FOO=barbaz"},
+		handler: handler,
+		logger:  logger,
 	}
 	expectedData := fmt.Sprintf("barbaz\n%s\n", tmpDir)
-	expectedLogs := []string{"logging"}
 
-	handler := newTestHandler()
-	logger, logs := newTestLogFunction()
-
-	if err := op.Run(handler, logger); err != nil {
-		t.Errorf("unexpected error: %s", err)
+	if res := op.Run(time.Now()); res.Status != StatusSuccess {
+		t.Errorf("unexpected error: %+v", res)
 	}
 	if len(handler.chunks) != 1 {
 		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
@@ -145,13 +145,9 @@ func TestRun(t *testing.T) {
 		t.Errorf("expected %q, got %q", expectedData, chunk.Data)
 	}
 
-	if len(*logs) != len(expectedLogs) {
-		t.Errorf("expected %d logs, got %d", len(expectedLogs), len(*logs))
-	}
-	for i, log := range *logs {
-		if log != expectedLogs[i] {
-			t.Errorf("expected %q, got %q", expectedLogs[i], log)
-		}
+	expectedLogs := []string{"logging", "DONE"}
+	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
+		t.Errorf("expected %q, got %q", expectedLogs, logs)
 	}
 }
 
@@ -159,15 +155,16 @@ func TestRunLongOutput(t *testing.T) {
 	t.Parallel()
 
 	extraSize := 256 << 10
+	handler := &testHandler{}
+	logger, lines := newTestLogger()
 	op := &Operation{
 		Command: []string{"bash", "-c", fmt.Sprintf("yes | head -c %d", CHUNK_SIZE+extraSize)},
+		handler: handler,
+		logger:  logger,
 	}
 
-	handler := newTestHandler()
-	logger, _ := newTestLogFunction()
-
-	if err := op.Run(handler, logger); err != nil {
-		t.Errorf("unexpected error: %s", err)
+	if res := op.Run(time.Now()); res.Status != StatusSuccess {
+		t.Errorf("unexpected error: %+v", res)
 	}
 	if len(handler.chunks) != 2 {
 		t.Errorf("expected 2 chunks, got %d", len(handler.chunks))
@@ -177,96 +174,187 @@ func TestRunLongOutput(t *testing.T) {
 		t.Errorf("unexpected error: %s", chunk.Error)
 	} else if len(chunk.Data) != CHUNK_SIZE {
 		t.Errorf("expected %d bytes, got %d", CHUNK_SIZE, len(chunk.Data))
-	} else if chunk.Done {
-		t.Errorf("expected first chunk to not be last one")
 	}
 
 	if chunk := handler.chunks[1]; chunk.Error != nil {
 		t.Errorf("unexpected error: %s", chunk.Error)
 	} else if len(chunk.Data) != extraSize {
 		t.Errorf("expected %d bytes, got %d", extraSize, len(chunk.Data))
-	} else if !chunk.Done {
-		t.Errorf("expected last chunk to be last one")
+	}
+	expectedLogs := []string{"DONE"}
+	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
+		t.Errorf("expected %q, got %q", expectedLogs, logs)
+	}
+}
+
+func TestRunSkipped(t *testing.T) {
+	t.Parallel()
+
+	lastRun := time.Date(2021, 10, 12, 10, 30, 38, 0, time.Local)
+	handler := &testHandler{lastRun: lastRun}
+	schedule, err := NewSchedule("0,30 * * * *")
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	logger, lines := newTestLogger()
+	op := &Operation{
+		Schedule: *schedule,
+		Command:  []string{"echo", "hello world"},
+		handler:  handler,
+		logger:   logger,
+	}
+
+	now := time.Date(2021, 10, 12, 10, 59, 38, 0, time.Local)
+	if res := op.Run(now); res.Status != StatusSkipped {
+		t.Errorf("unexpected result: %+v", res)
+	}
+
+	if len(handler.chunks) != 0 {
+		t.Errorf("expected 0 chunks, got %d", len(handler.chunks))
+	}
+
+	expectedLogs := []string{"SKIPPED"}
+	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
+		t.Errorf("expected %q, got %q", expectedLogs, logs)
+	}
+}
+
+func TestRunHandlerInitError(t *testing.T) {
+	t.Parallel()
+
+	initErr := errors.New("init error")
+	handler := &testHandler{initErr: initErr}
+	logger, lines := newTestLogger()
+	op := &Operation{
+		Command: []string{"echo", "hello world"},
+		handler: handler,
+		logger:  logger,
+	}
+
+	if res := op.Run(time.Now()); res.Status != StatusFailure {
+		t.Errorf("unexpected result: %+v", res)
+	} else if res.Error != initErr {
+		t.Errorf("expected %v, got %v", initErr, res.Error)
+	}
+
+	if len(handler.chunks) != 0 {
+		t.Errorf("expected 0 chunks, got %d", len(handler.chunks))
+	}
+
+	expectedLogs := []string{"ERROR (Initialization failed): init error"}
+	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
+		t.Errorf("expected %q, got %q", expectedLogs, logs)
+	}
+}
+
+func TestRunLastRunError(t *testing.T) {
+	t.Parallel()
+
+	lastRunErr := errors.New("last run error")
+	handler := &testHandler{lastRunErr: lastRunErr}
+	logger, lines := newTestLogger()
+	op := &Operation{
+		Command: []string{"echo", "hello world"},
+		handler: handler,
+		logger:  logger,
+	}
+
+	if res := op.Run(time.Now()); res.Status != StatusFailure {
+		t.Errorf("unexpected result: %+v", res)
+	} else if res.Error != lastRunErr {
+		t.Errorf("expected %v, got %v", lastRunErr, res.Error)
+	}
+
+	if len(handler.chunks) != 0 {
+		t.Errorf("expected 0 chunks, got %d", len(handler.chunks))
+	}
+
+	expectedLogs := []string{"ERROR (Could not find last run): last run error"}
+	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
+		t.Errorf("expected %q, got %q", expectedLogs, logs)
 	}
 }
 
 func TestRunProcessSpawnError(t *testing.T) {
 	t.Parallel()
 
+	handler := &testHandler{}
+	logger, lines := newTestLogger()
 	op := &Operation{
 		Command: []string{"this-cmd-does-not-exist"},
+		handler: handler,
+		logger:  logger,
 	}
 
-	handler := newTestHandler()
-	logger, logs := newTestLogFunction()
-
-	err := op.Run(handler, logger)
-	if err == nil {
-		t.Error("expected error, got none")
+	res := op.Run(time.Now())
+	if res.Status != StatusFailure {
+		t.Errorf("unexpected result: %+v", res)
 	}
 
 	if len(handler.chunks) != 1 {
 		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
 	}
-	if chunk := handler.chunks[0]; chunk.Error != err {
-		t.Errorf("expected %q, got %q", err, chunk.Error)
+	if chunk := handler.chunks[0]; !errors.Is(res.Error, chunk.Error) {
+		t.Errorf("expected %q, got %q", res.Error, chunk.Error)
 	} else if len(chunk.Data) > 0 {
 		t.Errorf("expected no data, got %q", chunk.Data)
 	}
 
-	if len(*logs) != 1 {
-		t.Errorf("expected 1 log, got %d", len(*logs))
-	} else if (*logs)[0] != err.Error() {
-		t.Errorf("expected %q, got %q", err.Error(), (*logs)[0])
+	expectedLogs := []string{"ERROR (Command start): exec: \"this-cmd-does-not-exist\": executable file not found in $PATH"}
+	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
+		t.Errorf("expected %q, got %q", expectedLogs, logs)
 	}
 }
 
 func TestRunProcessExecutionError(t *testing.T) {
 	t.Parallel()
 
+	handler := &testHandler{}
+	logger, lines := newTestLogger()
 	op := &Operation{
 		Command: []string{"bash", "-c", "echo foo bar; exit 1"},
+		handler: handler,
+		logger:  logger,
 	}
 
-	handler := newTestHandler()
-	logger, logs := newTestLogFunction()
-
-	err := op.Run(handler, logger)
-	if err == nil {
-		t.Error("expected error, got none")
+	res := op.Run(time.Now())
+	if res.Status != StatusFailure {
+		t.Errorf("unexpected result: %+v", res)
 	}
 
 	if len(handler.chunks) != 1 {
 		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
 	}
-	if chunk := handler.chunks[0]; chunk.Error != err {
-		t.Errorf("expected %q, got %q", err, chunk.Error)
+	if chunk := handler.chunks[0]; !errors.Is(res.Error, chunk.Error) {
+		t.Errorf("expected %q, got %q", res.Error, chunk.Error)
 	} else if string(chunk.Data) != "foo bar\n" {
 		t.Errorf("expected %q, got %q", "foo bar\n", chunk.Data)
 	}
 
-	if len(*logs) != 1 {
-		t.Errorf("expected 1 log, got %d", len(*logs))
-	} else if (*logs)[0] != err.Error() {
-		t.Errorf("expected %q, got %q", err.Error(), (*logs)[0])
+	expectedLogs := []string{"ERROR (Command failed): exit status 1"}
+	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
+		t.Errorf("expected %q, got %q", expectedLogs, logs)
 	}
 }
 
 func TestRunProcessHandlerError(t *testing.T) {
 	t.Parallel()
 
+	testErr := errors.New("test error")
+	handler := &testHandler{}
+	logger, lines := newTestLogger()
 	op := &Operation{
 		Command: []string{"bash", "-c", "echo foo bar"},
+		handler: handler,
+		logger:  logger,
 	}
 
-	testErr := errors.New("test error")
-	handler := newTestHandler()
 	handler.err = testErr
-	logger, logs := newTestLogFunction()
 
-	err := op.Run(handler, logger)
-	if err != testErr {
-		t.Errorf("expected %q, got %q", testErr, err)
+	if res := op.Run(time.Now()); res.Status != StatusFailure {
+		t.Errorf("unexpected result: %+v", res)
+	} else if !errors.Is(res.Error, testErr) {
+		t.Errorf("expected %q, got %q", testErr, res.Error)
 	}
 
 	if len(handler.chunks) != 1 {
@@ -278,9 +366,42 @@ func TestRunProcessHandlerError(t *testing.T) {
 		t.Errorf("expected %q, got %q", "foo bar\n", chunk.Data)
 	}
 
-	if len(*logs) != 1 {
-		t.Errorf("expected 1 log, got %d", len(*logs))
-	} else if (*logs)[0] != err.Error() {
-		t.Errorf("expected %q, got %q", err.Error(), (*logs)[0])
+	expectedLogs := []string{"ERROR (Upload failed): test error"}
+	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
+		t.Errorf("expected %q, got %q", expectedLogs, logs)
+	}
+}
+
+func TestRunAbortError(t *testing.T) {
+	t.Parallel()
+
+	abortErr := errors.New("test error")
+	handler := &testHandler{}
+	logger, lines := newTestLogger()
+	op := &Operation{
+		Command: []string{"bash", "-c", "echo foo bar; exit 1"},
+		handler: handler,
+		logger:  logger,
+	}
+	handler.err = abortErr
+
+	if res := op.Run(time.Now()); res.Status != StatusFailure {
+		t.Errorf("unexpected result: %+v", res)
+	} else if !errors.Is(res.Error, abortErr) {
+		t.Errorf("expected %q, got %q", abortErr, res.Error)
+	}
+
+	if len(handler.chunks) != 1 {
+		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
+	}
+	if chunk := handler.chunks[0]; errors.Is(chunk.Error, abortErr) {
+		t.Errorf("expected %q, got %q", abortErr, chunk.Error)
+	} else if string(chunk.Data) != "foo bar\n" {
+		t.Errorf("expected %q, got %q", "foo bar\n", chunk.Data)
+	}
+
+	expectedLogs := []string{"ERROR (Command failed): exit status 1", "ERROR (Upload abort failed): test error"}
+	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
+		t.Errorf("expected %q, got %q", expectedLogs, logs)
 	}
 }

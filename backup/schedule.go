@@ -11,7 +11,7 @@ type ScheduleExpression struct {
 	expression *string
 }
 
-func (s *ScheduleExpression) String() string {
+func (s ScheduleExpression) String() string {
 	if s.expression == nil {
 		return ""
 	}
@@ -31,7 +31,7 @@ func (s *ScheduleExpression) UnmarshalText(text []byte) error {
 	}
 }
 
-func (s *ScheduleExpression) Next(t time.Time) time.Time {
+func (s ScheduleExpression) Next(t time.Time) time.Time {
 	if t.IsZero() {
 		return time.Now()
 	}

@@ -1,33 +1,26 @@
 package backup
 
 import (
+	"fmt"
 	"time"
 )
 
 const CHUNK_SIZE = 10 << 20
 
 type Handler interface {
-	Handler(chunks chan Chunk)
-
-	Wait() error
+	Handler(<-chan Chunk, time.Time) (func() error, error)
+	LastRun() (time.Time, error)
 }
 
-type LastRunner interface {
-	LastRun(Destination) (time.Time, error)
+type Notifier interface {
+	Notify(...OperationResult) error
+	Error(interface{}) error
 }
 
-type Operations map[string]Operation
+func ToError(val interface{}) error {
+	if err, ok := val.(error); ok {
+		return err
+	}
 
-type DestinationType string
-
-const (
-	S3Destination DestinationType = "s3"
-)
-
-type Destination struct {
-	Type   DestinationType
-	Bucket string
-	Prefix string
-	Suffix string
-	Region string
+	return fmt.Errorf("%+v", val)
 }

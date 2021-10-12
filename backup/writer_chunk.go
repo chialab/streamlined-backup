@@ -10,7 +10,6 @@ const CHUNK_BUFFER = 8
 type Chunk struct {
 	Data  []byte
 	Error error
-	Done  bool
 }
 
 func (c *Chunk) NewReader() io.ReadSeeker {
@@ -39,7 +38,7 @@ func (w *ChunkWriter) Append(p []byte) int64 {
 	w.data = append(w.data, p...)
 	written := int64(0)
 	for int64(len(w.data)) >= w.size {
-		w.Chunks <- Chunk{Data: w.data[:w.size], Done: false}
+		w.Chunks <- Chunk{Data: w.data[:w.size]}
 		w.data = w.data[w.size:]
 		written += w.size
 	}
@@ -47,10 +46,14 @@ func (w *ChunkWriter) Append(p []byte) int64 {
 	return written
 }
 func (w *ChunkWriter) Close() error {
-	w.Chunks <- Chunk{Data: w.data, Done: true}
+	if len(w.data) > 0 {
+		w.Chunks <- Chunk{Data: w.data}
+	}
+	close(w.Chunks)
 
 	return nil
 }
 func (w *ChunkWriter) Abort(err error) {
-	w.Chunks <- Chunk{Data: w.data, Error: err, Done: true}
+	w.Chunks <- Chunk{Data: w.data, Error: err}
+	close(w.Chunks)
 }

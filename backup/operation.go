@@ -1,7 +1,7 @@
 package backup
 
 import (
-	"fmt"
+	"log"
 	"os/exec"
 	"time"
 
@@ -9,31 +9,21 @@ import (
 )
 
 type Operation struct {
-	Schedule    ScheduleExpression
-	Command     []string
-	Cwd         string   `toml:"cwd,omitempty"`
-	Env         []string `toml:"env,omitempty"`
-	Destination Destination
+	Name     string
+	Schedule ScheduleExpression
+	Command  []string
+	Cwd      string   `toml:"cwd,omitempty"`
+	Env      []string `toml:"env,omitempty"`
+	handler  Handler
+	logger   *log.Logger
 }
 
-type OperationStatus string
-
-const (
-	StatusSuccess OperationStatus = "success"
-	StatusFailure OperationStatus = "failure"
-	StatusSkipped OperationStatus = "skipped"
-)
-
-type OperationResult struct {
-	Name      string
-	Status    OperationStatus
-	Operation *Operation
-	Logs      []string
-	Error     error
+type OperationInterface interface {
+	Run(now time.Time) (result OperationResult)
 }
 
-func (o *Operation) ShouldRun(lastRunner LastRunner, now time.Time) (bool, error) {
-	lastRun, err := lastRunner.LastRun(o.Destination)
+func (o Operation) ShouldRun(now time.Time) (bool, error) {
+	lastRun, err := o.handler.LastRun()
 	if err != nil {
 		return false, err
 	}
@@ -45,12 +35,47 @@ func (o *Operation) ShouldRun(lastRunner LastRunner, now time.Time) (bool, error
 	return o.Schedule.Next(lastRun).Before(now), nil
 }
 
-func (o *Operation) Run(handler Handler, log logFunction) error {
-	logsWriter := NewLogWriter(log)
+func (o Operation) Run(now time.Time) (result OperationResult) {
+	result = OperationResult{Operation: &o}
+	if run, err := o.ShouldRun(now); err != nil {
+		o.logger.Printf("ERROR (Could not find last run): %s", err)
+		result.Status = StatusFailure
+		result.Error = err
+
+		return
+	} else if !run {
+		o.logger.Print("SKIPPED")
+		result.Status = StatusSkipped
+
+		return
+	}
+
+	logsWriter := &LogWriter{logger: o.logger}
+	defer logsWriter.Close()
+
 	writer := NewChunkWriter(CHUNK_SIZE)
-	go handler.Handler(writer.Chunks)
+	wait, initErr := o.handler.Handler(writer.Chunks, now)
+	if initErr != nil {
+		o.logger.Printf("ERROR (Initialization failed): %s", initErr)
+		result.Status = StatusFailure
+		result.Error = initErr
+
+		return
+	}
 	defer func() {
-		logsWriter.Close()
+		if panicked := recover(); panicked != nil {
+			panicErr := ToError(panicked)
+
+			result.Status = StatusFailure
+			result.Error = multierror.Append(result.Error, panicErr)
+			if writer != nil {
+				writer.Abort(panicErr)
+				if err := wait(); err != nil {
+					o.logger.Printf("ERROR (Upload abort failed): %s", err)
+					result.Error = multierror.Append(result.Error, err)
+				}
+			}
+		}
 	}()
 
 	cmd := exec.Command(o.Command[0], o.Command[1:]...)
@@ -60,32 +85,25 @@ func (o *Operation) Run(handler Handler, log logFunction) error {
 	cmd.Stderr = logsWriter
 
 	if err := cmd.Start(); err != nil {
-		log(fmt.Sprint(err))
-		writer.Abort(err)
-		if handlerErr := handler.Wait(); handlerErr != nil {
-			return multierror.Append(err, handlerErr)
-		}
-
-		return err
+		o.logger.Printf("ERROR (Command start): %s", err)
+		panic(err)
 	}
 
 	if err := cmd.Wait(); err != nil {
-		log(fmt.Sprint(err))
-		writer.Abort(err)
-		if handlerErr := handler.Wait(); handlerErr != nil {
-			return multierror.Append(err, handlerErr)
-		}
-
-		return err
+		o.logger.Printf("ERROR (Command failed): %s", err)
+		panic(err)
 	}
 
 	writer.Close()
+	writer = nil
 
-	if err := handler.Wait(); err != nil {
-		log(fmt.Sprint(err))
-
-		return err
+	if err := wait(); err != nil {
+		o.logger.Printf("ERROR (Upload failed): %s", err)
+		panic(err)
 	}
 
-	return nil
+	o.logger.Print("DONE")
+	result.Status = StatusSuccess
+
+	return
 }
