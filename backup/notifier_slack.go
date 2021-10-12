@@ -69,7 +69,9 @@ func (n SlackNotifier) Notify(results ...OperationResult) error {
 
 	body := payload{}
 	for _, result := range results {
-		body.Blocks = append(body.Blocks, n.Format(&result))
+		if block := n.Format(&result); block != nil {
+			body.Blocks = append(body.Blocks, block)
+		}
 	}
 
 	buf := bytes.NewBuffer(nil)
