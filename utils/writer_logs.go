@@ -1,4 +1,4 @@
-package backup
+package utils
 
 import (
 	"log"
@@ -7,15 +7,22 @@ import (
 
 type LogWriter struct {
 	currentLine string
-	Lines       []string
+	lines       []string
 	logger      *log.Logger
+}
+
+func NewLogWriter(logger *log.Logger) *LogWriter {
+	return &LogWriter{
+		logger: logger,
+		lines:  make([]string, 0),
+	}
 }
 
 func (w *LogWriter) Write(p []byte) (n int, err error) {
 	data := strings.Split(w.currentLine+string(p), "\n")
 	w.currentLine = data[len(data)-1]
 	lines := data[:len(data)-1]
-	w.Lines = append(w.Lines, lines...)
+	w.lines = append(w.lines, lines...)
 
 	if w.logger == nil {
 		return len(p), nil
@@ -38,4 +45,8 @@ func (w *LogWriter) Close() error {
 	}
 
 	return nil
+}
+
+func (w LogWriter) Lines() []string {
+	return w.lines
 }

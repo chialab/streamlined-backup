@@ -1,4 +1,4 @@
-package backup
+package utils
 
 import (
 	"bytes"
@@ -65,10 +65,11 @@ func TestLogWriter(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			writer := &LogWriter{Lines: []string{}}
 			logger, lines := newTestLogger()
+
+			writer := NewLogWriter(nil)
 			if tc.useUnderlyingLogger {
-				writer.logger = logger
+				writer = NewLogWriter(logger)
 			}
 
 			for _, step := range tc.steps {
@@ -78,8 +79,8 @@ func TestLogWriter(t *testing.T) {
 					t.Errorf("expected %d bytes written, got %d", len(step.input), b)
 				}
 
-				if !reflect.DeepEqual(step.expected, writer.Lines) {
-					t.Errorf("expected %#v, got %#v", step.expected, writer.Lines)
+				if lines := writer.Lines(); !reflect.DeepEqual(step.expected, lines) {
+					t.Errorf("expected %#v, got %#v", step.expected, lines)
 				}
 				if logs := lines(); tc.useUnderlyingLogger {
 					if !reflect.DeepEqual(step.expected, logs) {
@@ -89,8 +90,8 @@ func TestLogWriter(t *testing.T) {
 			}
 
 			writer.Close()
-			if !reflect.DeepEqual(tc.final, writer.Lines) {
-				t.Errorf("expected %#v, got %#v", tc.final, writer.Lines)
+			if lines := writer.Lines(); !reflect.DeepEqual(tc.final, lines) {
+				t.Errorf("expected %#v, got %#v", tc.final, lines)
 			}
 			if logs := lines(); tc.useUnderlyingLogger {
 				if !reflect.DeepEqual(tc.final, logs) {

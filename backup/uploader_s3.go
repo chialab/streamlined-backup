@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/chialab/streamlined-backup/utils"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -87,7 +88,7 @@ type S3Handler struct {
 	destination S3DestinationDefinition
 }
 
-func (h S3Handler) Handler(chunks <-chan Chunk, timestamp time.Time) (func() error, error) {
+func (h S3Handler) Handler(chunks <-chan utils.Chunk, timestamp time.Time) (func() error, error) {
 	upload, err := h.initMultipartUpload(timestamp)
 	if err != nil {
 		return nil, err
@@ -104,7 +105,7 @@ func (h S3Handler) Handler(chunks <-chan Chunk, timestamp time.Time) (func() err
 			}
 
 			wg.Add(1)
-			go func(partNumber int64, chunk Chunk) {
+			go func(partNumber int64, chunk utils.Chunk) {
 				defer wg.Done()
 
 				upload.Parts <- h.uploadPart(upload, partNumber, chunk)
@@ -165,7 +166,7 @@ func (h S3Handler) initMultipartUpload(timestamp time.Time) (*s3MultipartUpload,
 	}
 }
 
-func (h S3Handler) uploadPart(upload *s3MultipartUpload, partNumber int64, chunk Chunk) s3UploadedPart {
+func (h S3Handler) uploadPart(upload *s3MultipartUpload, partNumber int64, chunk utils.Chunk) s3UploadedPart {
 	hash := md5.New()
 	hash.Write(chunk.Data)
 	md5sum := base64.StdEncoding.EncodeToString(hash.Sum(nil))

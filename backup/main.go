@@ -1,21 +1,14 @@
 package backup
 
 import (
-	"fmt"
 	"time"
+
+	"github.com/chialab/streamlined-backup/utils"
 )
 
 const CHUNK_SIZE = 10 << 20
 
 type Handler interface {
-	Handler(<-chan Chunk, time.Time) (func() error, error)
+	Handler(<-chan utils.Chunk, time.Time) (func() error, error)
 	LastRun() (time.Time, error)
-}
-
-func ToError(val interface{}) error {
-	if err, ok := val.(error); ok {
-		return err
-	}
-
-	return fmt.Errorf("%+v", val)
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/chialab/streamlined-backup/backup"
 	"github.com/chialab/streamlined-backup/notifier"
+	"github.com/chialab/streamlined-backup/utils"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -34,7 +35,7 @@ func main() {
 	slack := notifier.NewSlackNotifier(slackWebhooks...)
 	defer func() {
 		if panicked := recover(); panicked != nil {
-			err := backup.ToError(panicked)
+			err := utils.ToError(panicked)
 			if notifyErr := slack.Error(err); notifyErr != nil {
 				panic(multierror.Append(err, notifyErr))
 			}

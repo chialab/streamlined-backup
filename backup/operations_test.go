@@ -21,7 +21,7 @@ func TestRunOperations(t *testing.T) {
 	operations := Operations{
 		testOperation{
 			result: OperationResult{Status: StatusSuccess, Logs: []string{"fourth to complete"}},
-			delay:  time.Millisecond * 70,
+			delay:  time.Millisecond * 80,
 		},
 		testOperation{
 			result: OperationResult{Status: StatusSuccess, Logs: []string{"first to complete"}},
@@ -37,7 +37,7 @@ func TestRunOperations(t *testing.T) {
 		},
 		testOperation{
 			result: OperationResult{Status: StatusFailure, Logs: []string{"sixth to complete"}},
-			delay:  time.Millisecond * 40,
+			delay:  time.Millisecond * 50,
 		},
 		testOperation{
 			result: OperationResult{Status: StatusSuccess, Logs: []string{"fifth to complete"}},

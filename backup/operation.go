@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/chialab/streamlined-backup/utils"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -50,10 +51,10 @@ func (o Operation) Run(now time.Time) (result OperationResult) {
 		return
 	}
 
-	logsWriter := &LogWriter{logger: o.logger}
+	logsWriter := utils.NewLogWriter(o.logger)
 	defer logsWriter.Close()
 
-	writer := NewChunkWriter(CHUNK_SIZE)
+	writer := utils.NewChunkWriter(CHUNK_SIZE)
 	wait, initErr := o.handler.Handler(writer.Chunks, now)
 	if initErr != nil {
 		o.logger.Printf("ERROR (Initialization failed): %s", initErr)
@@ -64,7 +65,7 @@ func (o Operation) Run(now time.Time) (result OperationResult) {
 	}
 	defer func() {
 		if panicked := recover(); panicked != nil {
-			panicErr := ToError(panicked)
+			panicErr := utils.ToError(panicked)
 
 			result.Status = StatusFailure
 			result.Error = multierror.Append(result.Error, panicErr)

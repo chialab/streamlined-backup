@@ -1,17 +1,38 @@
 package backup
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/chialab/streamlined-backup/utils"
 )
+
+func newTestLogger() (*log.Logger, func() []string) {
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	lines := func() []string {
+		lines := strings.Split(buf.String(), "\n")
+		if lines[len(lines)-1] == "" {
+			lines = lines[:len(lines)-1]
+		}
+
+		return lines
+	}
+
+	return logger, lines
+}
 
 type testHandler struct {
 	lastRun    time.Time
-	chunks     []Chunk
+	chunks     []utils.Chunk
 	lastRunErr error
 	initErr    error
 	err        error
@@ -21,7 +42,7 @@ func (r *testHandler) LastRun() (time.Time, error) {
 	return r.lastRun, r.lastRunErr
 }
 
-func (h *testHandler) Handler(chunks <-chan Chunk, now time.Time) (func() error, error) {
+func (h *testHandler) Handler(chunks <-chan utils.Chunk, now time.Time) (func() error, error) {
 	if h.initErr != nil {
 		return nil, h.initErr
 	}

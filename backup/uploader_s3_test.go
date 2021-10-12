@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/chialab/streamlined-backup/utils"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -273,15 +274,15 @@ func TestS3Handler(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan Chunk)
+	chunks := make(chan utils.Chunk)
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
 	wait, initErr := handler.Handler(chunks, now)
 	if initErr != nil {
 		t.Fatalf("unexpected error: %s", initErr)
 	}
-	chunks <- Chunk{Data: []byte("10ms")}
-	chunks <- Chunk{Data: []byte("5ms")}
-	chunks <- Chunk{Data: []byte("1ms")}
+	chunks <- utils.Chunk{Data: []byte("10ms")}
+	chunks <- utils.Chunk{Data: []byte("5ms")}
+	chunks <- utils.Chunk{Data: []byte("1ms")}
 	close(chunks)
 
 	if err := wait(); err != nil {
@@ -320,7 +321,7 @@ func TestS3HandlerInitError(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan Chunk)
+	chunks := make(chan utils.Chunk)
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
 
 	if wait, initErr := handler.Handler(chunks, now); initErr == nil {
@@ -355,15 +356,15 @@ func TestS3HandlerUploadError(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan Chunk)
+	chunks := make(chan utils.Chunk)
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
 	wait, initErr := handler.Handler(chunks, now)
 	if initErr != nil {
 		t.Fatalf("unexpected error: %s", initErr)
 	}
-	chunks <- Chunk{Data: []byte("10ms")}
-	chunks <- Chunk{Data: []byte("error")}
-	chunks <- Chunk{Data: []byte("1ms")}
+	chunks <- utils.Chunk{Data: []byte("10ms")}
+	chunks <- utils.Chunk{Data: []byte("error")}
+	chunks <- utils.Chunk{Data: []byte("1ms")}
 	close(chunks)
 
 	if err := wait(); err == nil {
@@ -400,14 +401,14 @@ func TestS3HandlerChunkError(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan Chunk)
+	chunks := make(chan utils.Chunk)
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
 	wait, initErr := handler.Handler(chunks, now)
 	if initErr != nil {
 		t.Fatalf("unexpected error: %s", initErr)
 	}
-	chunks <- Chunk{Data: []byte("10ms")}
-	chunks <- Chunk{Data: []byte("5ms"), Error: errors.New("test error")}
+	chunks <- utils.Chunk{Data: []byte("10ms")}
+	chunks <- utils.Chunk{Data: []byte("5ms"), Error: errors.New("test error")}
 	close(chunks)
 
 	if err := wait(); err == nil {
@@ -444,15 +445,15 @@ func TestS3HandlerCompleteError(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan Chunk)
+	chunks := make(chan utils.Chunk)
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
 	wait, initErr := handler.Handler(chunks, now)
 	if initErr != nil {
 		t.Fatalf("unexpected error: %s", initErr)
 	}
-	chunks <- Chunk{Data: []byte("10ms")}
-	chunks <- Chunk{Data: []byte("5ms")}
-	chunks <- Chunk{Data: []byte("5ms")}
+	chunks <- utils.Chunk{Data: []byte("10ms")}
+	chunks <- utils.Chunk{Data: []byte("5ms")}
+	chunks <- utils.Chunk{Data: []byte("5ms")}
 	close(chunks)
 
 	if err := wait(); err == nil {
@@ -489,14 +490,14 @@ func TestS3HandlerAbortError(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan Chunk)
+	chunks := make(chan utils.Chunk)
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
 	wait, initErr := handler.Handler(chunks, now)
 	if initErr != nil {
 		t.Fatalf("unexpected error: %s", initErr)
 	}
-	chunks <- Chunk{Data: []byte("10ms")}
-	chunks <- Chunk{Data: []byte("5ms"), Error: errors.New("test error")}
+	chunks <- utils.Chunk{Data: []byte("10ms")}
+	chunks <- utils.Chunk{Data: []byte("5ms"), Error: errors.New("test error")}
 	close(chunks)
 
 	if err := wait(); err == nil {
