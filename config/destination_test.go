@@ -5,6 +5,20 @@ import (
 	"time"
 )
 
+func TestClient(t *testing.T) {
+	t.Parallel()
+
+	dest := &S3DestinationDefinition{
+		Bucket: "example-bucket",
+		Region: "eu-south-1",
+	}
+	if client := dest.Client(); client == nil {
+		t.Error("expected client to be created")
+	} else if *client.Config.Region != dest.Region {
+		t.Errorf("expected region %s, got %s", dest.Region, *client.Config.Region)
+	}
+}
+
 func TestKey(t *testing.T) {
 	t.Parallel()
 
