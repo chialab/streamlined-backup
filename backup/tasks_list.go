@@ -5,23 +5,23 @@ import (
 	"time"
 )
 
-type Operations []OperationInterface
+type TasksList []TaskInterface
 
-func (o Operations) Run(now time.Time, parallel uint) OperationResults {
+func (t TasksList) Run(now time.Time, parallel uint) Results {
 	pool := make(chan bool, parallel)
-	results := OperationResults{}
+	results := Results{}
 	mutex := &sync.Mutex{}
-	for _, op := range o {
+	for _, task := range t {
 		pool <- true
-		go func(op OperationInterface) {
+		go func(task TaskInterface) {
 			defer func() { <-pool }()
 
-			result := op.Run(now)
+			result := task.Run(now)
 
 			mutex.Lock()
 			defer mutex.Unlock()
 			results = append(results, result)
-		}(op)
+		}(task)
 	}
 	for i := 0; i < cap(pool); i++ {
 		pool <- true

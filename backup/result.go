@@ -6,15 +6,15 @@ import (
 	"github.com/alessio/shellescape"
 )
 
-type OperationStatus string
+type Status string
 
 const (
-	StatusSuccess OperationStatus = "success"
-	StatusFailure OperationStatus = "failure"
-	StatusSkipped OperationStatus = "skipped"
+	StatusSuccess Status = "success"
+	StatusFailure Status = "failure"
+	StatusSkipped Status = "skipped"
 )
 
-func (status OperationStatus) Priority() uint {
+func (status Status) Priority() uint {
 	switch status {
 	case StatusSuccess:
 		return 10
@@ -25,54 +25,54 @@ func (status OperationStatus) Priority() uint {
 	}
 }
 
-const UNKNOWN_OPERATION = "(unknown)"
+const UNKNOWN_TASK = "(unknown)"
 
 type Result struct {
-	Status    OperationStatus
-	Operation *Operation
-	Logs      []string
-	Error     error
+	Status Status
+	Task   *Task
+	Logs   []string
+	Error  error
 }
 
 func (r Result) Name() string {
-	if r.Operation == nil {
-		return UNKNOWN_OPERATION
+	if r.Task == nil {
+		return UNKNOWN_TASK
 	}
 
-	return r.Operation.Name
+	return r.Task.Name
 }
 
 func (r Result) Command() string {
-	if r.Operation == nil || r.Operation.Command == nil {
-		return UNKNOWN_OPERATION
+	if r.Task == nil || r.Task.Command == nil {
+		return UNKNOWN_TASK
 	}
 
-	return shellescape.QuoteCommand(r.Operation.Command)
+	return shellescape.QuoteCommand(r.Task.Command)
 }
 
 func (r Result) ActualCwd() string {
-	if r.Operation == nil || r.Operation.Cwd == "" {
+	if r.Task == nil || r.Task.Cwd == "" {
 		if cwd, err := os.Getwd(); err == nil {
 			return cwd
 		} else {
-			return UNKNOWN_OPERATION
+			return UNKNOWN_TASK
 		}
 	}
 
-	return r.Operation.Cwd
+	return r.Task.Cwd
 }
 
-type OperationResults []Result
+type Results []Result
 
-func (o OperationResults) Len() int {
-	return len(o)
+func (r Results) Len() int {
+	return len(r)
 }
-func (o OperationResults) Swap(i, j int) {
-	o[i], o[j] = o[j], o[i]
+func (r Results) Swap(i, j int) {
+	r[i], r[j] = r[j], r[i]
 }
-func (o OperationResults) Less(i, j int) bool {
-	if o[i].Status != o[j].Status {
-		return o[i].Status.Priority() < o[j].Status.Priority()
+func (r Results) Less(i, j int) bool {
+	if r[i].Status != r[j].Status {
+		return r[i].Status.Priority() < r[j].Status.Priority()
 	}
-	return o[i].Name() < o[j].Name()
+	return r[i].Name() < r[j].Name()
 }

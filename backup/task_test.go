@@ -99,9 +99,9 @@ func TestShouldRun(t *testing.T) {
 				t.Fatalf("unexpected error: %s", err)
 			}
 			handler := &testHandler{lastRun: tc.lastRun}
-			op := &Operation{Schedule: *schedule, handler: handler}
+			task := &Task{Schedule: *schedule, handler: handler}
 
-			if result, err := op.ShouldRun(now); err != nil {
+			if result, err := task.ShouldRun(now); err != nil {
 				t.Errorf("unexpected error: %s", err)
 			} else if result != tc.expected {
 				t.Errorf("expected %t, got %t", tc.expected, result)
@@ -122,10 +122,10 @@ func TestShouldRunError(t *testing.T) {
 	}
 	testErr := errors.New("test error")
 	handler := &testHandler{lastRunErr: testErr}
-	op := &Operation{Schedule: *schedule, handler: handler}
+	task := &Task{Schedule: *schedule, handler: handler}
 
 	now := time.Date(2021, 10, 6, 19, 10, 38, 0, time.Local)
-	if result, err := op.ShouldRun(now); result != false {
+	if result, err := task.ShouldRun(now); result != false {
 		t.Errorf("unexpected result: %t", result)
 	} else if err != testErr {
 		t.Errorf("expected %v, got %v", testErr, err)
@@ -144,7 +144,7 @@ func TestRun(t *testing.T) {
 
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
-	op := &Operation{
+	task := &Task{
 		Command: []string{"bash", "-c", "echo $FOO; pwd; echo logging >&2"},
 		Cwd:     tmpDir,
 		Env:     []string{"FOO=barbaz"},
@@ -153,7 +153,7 @@ func TestRun(t *testing.T) {
 	}
 	expectedData := fmt.Sprintf("barbaz\n%s\n", tmpDir)
 
-	if res := op.Run(time.Now()); res.Status != StatusSuccess {
+	if res := task.Run(time.Now()); res.Status != StatusSuccess {
 		t.Errorf("unexpected error: %+v", res)
 	}
 	if len(handler.chunks) != 1 {
@@ -178,13 +178,13 @@ func TestRunLongOutput(t *testing.T) {
 	extraSize := 256 << 10
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
-	op := &Operation{
+	task := &Task{
 		Command: []string{"bash", "-c", fmt.Sprintf("yes | head -c %d", CHUNK_SIZE+extraSize)},
 		handler: handler,
 		logger:  logger,
 	}
 
-	if res := op.Run(time.Now()); res.Status != StatusSuccess {
+	if res := task.Run(time.Now()); res.Status != StatusSuccess {
 		t.Errorf("unexpected error: %+v", res)
 	}
 	if len(handler.chunks) != 2 {
@@ -218,7 +218,7 @@ func TestRunSkipped(t *testing.T) {
 		t.Fatalf("unexpected error: %s", err)
 	}
 	logger, lines := newTestLogger()
-	op := &Operation{
+	task := &Task{
 		Schedule: *schedule,
 		Command:  []string{"echo", "hello world"},
 		handler:  handler,
@@ -226,7 +226,7 @@ func TestRunSkipped(t *testing.T) {
 	}
 
 	now := time.Date(2021, 10, 12, 10, 59, 38, 0, time.Local)
-	if res := op.Run(now); res.Status != StatusSkipped {
+	if res := task.Run(now); res.Status != StatusSkipped {
 		t.Errorf("unexpected result: %+v", res)
 	}
 
@@ -246,13 +246,13 @@ func TestRunHandlerInitError(t *testing.T) {
 	initErr := errors.New("init error")
 	handler := &testHandler{initErr: initErr}
 	logger, lines := newTestLogger()
-	op := &Operation{
+	task := &Task{
 		Command: []string{"echo", "hello world"},
 		handler: handler,
 		logger:  logger,
 	}
 
-	if res := op.Run(time.Now()); res.Status != StatusFailure {
+	if res := task.Run(time.Now()); res.Status != StatusFailure {
 		t.Errorf("unexpected result: %+v", res)
 	} else if res.Error != initErr {
 		t.Errorf("expected %v, got %v", initErr, res.Error)
@@ -274,13 +274,13 @@ func TestRunLastRunError(t *testing.T) {
 	lastRunErr := errors.New("last run error")
 	handler := &testHandler{lastRunErr: lastRunErr}
 	logger, lines := newTestLogger()
-	op := &Operation{
+	task := &Task{
 		Command: []string{"echo", "hello world"},
 		handler: handler,
 		logger:  logger,
 	}
 
-	if res := op.Run(time.Now()); res.Status != StatusFailure {
+	if res := task.Run(time.Now()); res.Status != StatusFailure {
 		t.Errorf("unexpected result: %+v", res)
 	} else if res.Error != lastRunErr {
 		t.Errorf("expected %v, got %v", lastRunErr, res.Error)
@@ -301,13 +301,13 @@ func TestRunProcessSpawnError(t *testing.T) {
 
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
-	op := &Operation{
+	task := &Task{
 		Command: []string{"this-cmd-does-not-exist"},
 		handler: handler,
 		logger:  logger,
 	}
 
-	res := op.Run(time.Now())
+	res := task.Run(time.Now())
 	if res.Status != StatusFailure {
 		t.Errorf("unexpected result: %+v", res)
 	}
@@ -332,13 +332,13 @@ func TestRunProcessExecutionError(t *testing.T) {
 
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
-	op := &Operation{
+	task := &Task{
 		Command: []string{"bash", "-c", "echo foo bar; exit 1"},
 		handler: handler,
 		logger:  logger,
 	}
 
-	res := op.Run(time.Now())
+	res := task.Run(time.Now())
 	if res.Status != StatusFailure {
 		t.Errorf("unexpected result: %+v", res)
 	}
@@ -364,7 +364,7 @@ func TestRunProcessHandlerError(t *testing.T) {
 	testErr := errors.New("test error")
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
-	op := &Operation{
+	task := &Task{
 		Command: []string{"bash", "-c", "echo foo bar"},
 		handler: handler,
 		logger:  logger,
@@ -372,7 +372,7 @@ func TestRunProcessHandlerError(t *testing.T) {
 
 	handler.err = testErr
 
-	if res := op.Run(time.Now()); res.Status != StatusFailure {
+	if res := task.Run(time.Now()); res.Status != StatusFailure {
 		t.Errorf("unexpected result: %+v", res)
 	} else if !errors.Is(res.Error, testErr) {
 		t.Errorf("expected %q, got %q", testErr, res.Error)
@@ -399,14 +399,14 @@ func TestRunAbortError(t *testing.T) {
 	abortErr := errors.New("test error")
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
-	op := &Operation{
+	task := &Task{
 		Command: []string{"bash", "-c", "echo foo bar; exit 1"},
 		handler: handler,
 		logger:  logger,
 	}
 	handler.err = abortErr
 
-	if res := op.Run(time.Now()); res.Status != StatusFailure {
+	if res := task.Run(time.Now()); res.Status != StatusFailure {
 		t.Errorf("unexpected result: %+v", res)
 	} else if !errors.Is(res.Error, abortErr) {
 		t.Errorf("expected %q, got %q", abortErr, res.Error)

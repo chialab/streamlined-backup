@@ -6,46 +6,46 @@ import (
 	"time"
 )
 
-type testOperation struct {
+type testTask struct {
 	result Result
 	delay  time.Duration
 }
 
-func (t testOperation) Run(now time.Time) Result {
+func (t testTask) Run(now time.Time) Result {
 	time.Sleep(t.delay)
 
 	return t.result
 }
 
-func TestRunOperations(t *testing.T) {
-	operations := Operations{
-		testOperation{
+func TestRunTasks(t *testing.T) {
+	tasks := TasksList{
+		testTask{
 			result: Result{Status: StatusSuccess, Logs: []string{"fourth to complete"}},
 			delay:  time.Millisecond * 80,
 		},
-		testOperation{
+		testTask{
 			result: Result{Status: StatusSuccess, Logs: []string{"first to complete"}},
 			delay:  time.Millisecond * 30,
 		},
-		testOperation{
+		testTask{
 			result: Result{Status: StatusSkipped, Logs: []string{"second to complete"}},
 			delay:  time.Millisecond * 20,
 		},
-		testOperation{
+		testTask{
 			result: Result{Status: StatusFailure, Logs: []string{"third to complete"}},
 			delay:  time.Millisecond * 10,
 		},
-		testOperation{
+		testTask{
 			result: Result{Status: StatusFailure, Logs: []string{"sixth to complete"}},
 			delay:  time.Millisecond * 50,
 		},
-		testOperation{
+		testTask{
 			result: Result{Status: StatusSuccess, Logs: []string{"fifth to complete"}},
 			delay:  time.Millisecond * 20,
 		},
 	}
-	results := operations.Run(time.Now(), 2)
-	expected := OperationResults{
+	results := tasks.Run(time.Now(), 2)
+	expected := Results{
 		Result{Status: StatusSuccess, Logs: []string{"first to complete"}},
 		Result{Status: StatusSkipped, Logs: []string{"second to complete"}},
 		Result{Status: StatusFailure, Logs: []string{"third to complete"}},

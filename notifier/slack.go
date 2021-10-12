@@ -27,7 +27,7 @@ func (n SlackNotifier) Format(o *backup.Result) map[string]interface{} {
 			"type": "section",
 			"text": map[string]string{
 				"type": "mrkdwn",
-				"text": fmt.Sprintf(":white_check_mark: Backup operation `%s` completed successfully.", o.Name()),
+				"text": fmt.Sprintf(":white_check_mark: Backup task `%s` completed successfully.", o.Name()),
 			},
 		}
 
@@ -36,7 +36,7 @@ func (n SlackNotifier) Format(o *backup.Result) map[string]interface{} {
 			"type": "section",
 			"text": map[string]string{
 				"type": "mrkdwn",
-				"text": fmt.Sprintf(":rotating_light: *Error running backup operation `%s`!* @channel", o.Name()),
+				"text": fmt.Sprintf(":rotating_light: *Error running backup task `%s`!* @channel", o.Name()),
 			},
 			"fields": []map[string]string{
 				{

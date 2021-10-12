@@ -7,31 +7,31 @@ import (
 	"testing"
 )
 
-func TestOperationResultAccessors(t *testing.T) {
+func TestResultAccessors(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	t.Run("without_operation", func(t *testing.T) {
+	t.Run("without_task_definition", func(t *testing.T) {
 		result := &Result{}
 
-		if name := result.Name(); name != UNKNOWN_OPERATION {
-			t.Errorf("expected %s, got %s", UNKNOWN_OPERATION, name)
+		if name := result.Name(); name != UNKNOWN_TASK {
+			t.Errorf("expected %s, got %s", UNKNOWN_TASK, name)
 		}
-		if cmd := result.Command(); cmd != UNKNOWN_OPERATION {
-			t.Errorf("expected %s, got %s", UNKNOWN_OPERATION, cmd)
+		if cmd := result.Command(); cmd != UNKNOWN_TASK {
+			t.Errorf("expected %s, got %s", UNKNOWN_TASK, cmd)
 		}
 		if wd := result.ActualCwd(); wd != cwd {
 			t.Errorf("expected %s, got %s", cwd, wd)
 		}
 	})
 
-	t.Run("with_operation", func(t *testing.T) {
+	t.Run("with_task_definition", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		result := &Result{
-			Operation: &Operation{
+			Task: &Task{
 				Name: "test",
 				Command: []string{
 					"bash",
@@ -56,15 +56,15 @@ func TestOperationResultAccessors(t *testing.T) {
 
 }
 
-func TestOperationResultsSort(t *testing.T) {
+func TestResultsSort(t *testing.T) {
 	t.Parallel()
 
-	results := OperationResults{
-		{Status: StatusFailure, Operation: &Operation{Name: "test e"}},
-		{Status: StatusSuccess, Operation: &Operation{Name: "test b"}},
-		{Status: StatusSkipped, Operation: &Operation{Name: "test d"}},
-		{Status: StatusSuccess, Operation: &Operation{Name: "test c"}},
-		{Status: StatusFailure, Operation: &Operation{Name: "test a"}},
+	results := Results{
+		{Status: StatusFailure, Task: &Task{Name: "test e"}},
+		{Status: StatusSuccess, Task: &Task{Name: "test b"}},
+		{Status: StatusSkipped, Task: &Task{Name: "test d"}},
+		{Status: StatusSuccess, Task: &Task{Name: "test c"}},
+		{Status: StatusFailure, Task: &Task{Name: "test a"}},
 	}
 	if results.Len() != 5 {
 		t.Errorf("expected 5 results, got %d", results.Len())
@@ -78,12 +78,12 @@ func TestOperationResultsSort(t *testing.T) {
 
 	sort.Sort(results)
 
-	expected := OperationResults{
-		{Status: StatusSkipped, Operation: &Operation{Name: "test d"}},
-		{Status: StatusSuccess, Operation: &Operation{Name: "test b"}},
-		{Status: StatusSuccess, Operation: &Operation{Name: "test c"}},
-		{Status: StatusFailure, Operation: &Operation{Name: "test a"}},
-		{Status: StatusFailure, Operation: &Operation{Name: "test e"}},
+	expected := Results{
+		{Status: StatusSkipped, Task: &Task{Name: "test d"}},
+		{Status: StatusSuccess, Task: &Task{Name: "test b"}},
+		{Status: StatusSuccess, Task: &Task{Name: "test c"}},
+		{Status: StatusFailure, Task: &Task{Name: "test a"}},
+		{Status: StatusFailure, Task: &Task{Name: "test e"}},
 	}
 	if !reflect.DeepEqual(results, expected) {
 		t.Errorf("expected %v, got %v", expected, results)

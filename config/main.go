@@ -5,7 +5,7 @@ import (
 	"github.com/chialab/streamlined-backup/utils"
 )
 
-type Operation struct {
+type Task struct {
 	Schedule    utils.ScheduleExpression
 	Command     []string
 	Cwd         string
@@ -13,8 +13,8 @@ type Operation struct {
 	Destination Destination
 }
 
-func LoadConfiguration(path string) (map[string]Operation, error) {
-	var config map[string]Operation
+func LoadConfiguration(path string) (map[string]Task, error) {
+	var config map[string]Task
 	if _, err := toml.DecodeFile(path, &config); err != nil {
 		return nil, err
 	}

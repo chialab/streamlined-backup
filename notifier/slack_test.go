@@ -25,27 +25,27 @@ func TestSlackFormat(t *testing.T) {
 			expected: nil,
 		},
 		"success": {
-			input: &backup.Result{Status: backup.StatusSuccess, Operation: &backup.Operation{Name: "foo"}},
+			input: &backup.Result{Status: backup.StatusSuccess, Task: &backup.Task{Name: "foo"}},
 			expected: map[string]interface{}{
 				"type": "section",
 				"text": map[string]string{
 					"type": "mrkdwn",
-					"text": ":white_check_mark: Backup operation `foo` completed successfully.",
+					"text": ":white_check_mark: Backup task `foo` completed successfully.",
 				},
 			},
 		},
 		"failure": {
 			input: &backup.Result{
-				Status:    backup.StatusFailure,
-				Error:     fmt.Errorf("test error"),
-				Logs:      []string{"test log 1", "test log 2", ""},
-				Operation: &backup.Operation{Name: "bar", Command: []string{"echo", "foo bar"}, Cwd: tmpDir},
+				Status: backup.StatusFailure,
+				Error:  fmt.Errorf("test error"),
+				Logs:   []string{"test log 1", "test log 2", ""},
+				Task:   &backup.Task{Name: "bar", Command: []string{"echo", "foo bar"}, Cwd: tmpDir},
 			},
 			expected: map[string]interface{}{
 				"type": "section",
 				"text": map[string]string{
 					"type": "mrkdwn",
-					"text": ":rotating_light: *Error running backup operation `bar`!* @channel",
+					"text": ":rotating_light: *Error running backup task `bar`!* @channel",
 				},
 				"fields": []map[string]string{
 					{
@@ -81,10 +81,10 @@ func TestSlackFormat(t *testing.T) {
 func TestSlackNotify(t *testing.T) {
 	results := []backup.Result{
 		{Status: backup.StatusSkipped},
-		{Status: backup.StatusSuccess, Operation: &backup.Operation{Name: "foo"}},
+		{Status: backup.StatusSuccess, Task: &backup.Task{Name: "foo"}},
 	}
 	expectedBody := fmt.Sprintf(
-		`{"blocks":[{"text":{"text":":white_check_mark: Backup operation %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",
+		`{"blocks":[{"text":{"text":":white_check_mark: Backup task %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",
 		"`foo`",
 	)
 
@@ -139,10 +139,10 @@ func TestSlackNotify(t *testing.T) {
 func TestSlackNotifyError(t *testing.T) {
 	results := []backup.Result{
 		{Status: backup.StatusSkipped},
-		{Status: backup.StatusSuccess, Operation: &backup.Operation{Name: "foo"}},
+		{Status: backup.StatusSuccess, Task: &backup.Task{Name: "foo"}},
 	}
 	expectedBody := fmt.Sprintf(
-		`{"blocks":[{"text":{"text":":white_check_mark: Backup operation %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",
+		`{"blocks":[{"text":{"text":":white_check_mark: Backup task %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",
 		"`foo`",
 	)
 

@@ -12,7 +12,7 @@ import (
 
 const CHUNK_SIZE = 10 << 20
 
-type Operation struct {
+type Task struct {
 	Name     string
 	Schedule utils.ScheduleExpression
 	Command  []string
@@ -22,12 +22,12 @@ type Operation struct {
 	logger   *log.Logger
 }
 
-type OperationInterface interface {
+type TaskInterface interface {
 	Run(now time.Time) (result Result)
 }
 
-func (o Operation) ShouldRun(now time.Time) (bool, error) {
-	lastRun, err := o.handler.LastRun()
+func (t Task) ShouldRun(now time.Time) (bool, error) {
+	lastRun, err := t.handler.LastRun()
 	if err != nil {
 		return false, err
 	}
@@ -36,31 +36,31 @@ func (o Operation) ShouldRun(now time.Time) (bool, error) {
 		return true, nil
 	}
 
-	return o.Schedule.Next(lastRun).Before(now), nil
+	return t.Schedule.Next(lastRun).Before(now), nil
 }
 
-func (o Operation) Run(now time.Time) (result Result) {
-	result = Result{Operation: &o}
-	if run, err := o.ShouldRun(now); err != nil {
-		o.logger.Printf("ERROR (Could not find last run): %s", err)
+func (t Task) Run(now time.Time) (result Result) {
+	result = Result{Task: &t}
+	if run, err := t.ShouldRun(now); err != nil {
+		t.logger.Printf("ERROR (Could not find last run): %s", err)
 		result.Status = StatusFailure
 		result.Error = err
 
 		return
 	} else if !run {
-		o.logger.Print("SKIPPED")
+		t.logger.Print("SKIPPED")
 		result.Status = StatusSkipped
 
 		return
 	}
 
-	logsWriter := utils.NewLogWriter(o.logger)
+	logsWriter := utils.NewLogWriter(t.logger)
 	defer logsWriter.Close()
 
 	writer := utils.NewChunkWriter(CHUNK_SIZE)
-	wait, initErr := o.handler.Handler(writer.Chunks, now)
+	wait, initErr := t.handler.Handler(writer.Chunks, now)
 	if initErr != nil {
-		o.logger.Printf("ERROR (Initialization failed): %s", initErr)
+		t.logger.Printf("ERROR (Initialization failed): %s", initErr)
 		result.Status = StatusFailure
 		result.Error = initErr
 
@@ -75,26 +75,26 @@ func (o Operation) Run(now time.Time) (result Result) {
 			if writer != nil {
 				writer.Abort(panicErr)
 				if err := wait(); err != nil {
-					o.logger.Printf("ERROR (Upload abort failed): %s", err)
+					t.logger.Printf("ERROR (Upload abort failed): %s", err)
 					result.Error = multierror.Append(result.Error, err)
 				}
 			}
 		}
 	}()
 
-	cmd := exec.Command(o.Command[0], o.Command[1:]...)
-	cmd.Dir = o.Cwd
-	cmd.Env = o.Env
+	cmd := exec.Command(t.Command[0], t.Command[1:]...)
+	cmd.Dir = t.Cwd
+	cmd.Env = t.Env
 	cmd.Stdout = writer
 	cmd.Stderr = logsWriter
 
 	if err := cmd.Start(); err != nil {
-		o.logger.Printf("ERROR (Command start): %s", err)
+		t.logger.Printf("ERROR (Command start): %s", err)
 		panic(err)
 	}
 
 	if err := cmd.Wait(); err != nil {
-		o.logger.Printf("ERROR (Command failed): %s", err)
+		t.logger.Printf("ERROR (Command failed): %s", err)
 		panic(err)
 	}
 
@@ -102,11 +102,11 @@ func (o Operation) Run(now time.Time) (result Result) {
 	writer = nil
 
 	if err := wait(); err != nil {
-		o.logger.Printf("ERROR (Upload failed): %s", err)
+		t.logger.Printf("ERROR (Upload failed): %s", err)
 		panic(err)
 	}
 
-	o.logger.Print("DONE")
+	t.logger.Print("DONE")
 	result.Status = StatusSuccess
 
 	return
