@@ -3,6 +3,7 @@ package backup
 import (
 	"crypto/md5"
 	"encoding/base64"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -42,7 +43,33 @@ type s3MultipartUpload struct {
 	Error    error
 }
 
-func newS3Handler(destination Destination) *S3Handler {
+const timeFormat = "20060102150405"
+
+type S3DestinationDefinition struct {
+	Bucket string
+	Prefix string
+	Suffix string
+	Region string
+}
+
+func (d S3DestinationDefinition) Key(timestamp time.Time) string {
+	return fmt.Sprintf("%s%s%s", d.Prefix, timestamp.Format(timeFormat), d.Suffix)
+}
+
+func (d S3DestinationDefinition) ParseTimestamp(key string) (time.Time, error) {
+	if !strings.HasPrefix(key, d.Prefix) || !strings.HasSuffix(key, d.Suffix) {
+		return time.Time{}, fmt.Errorf("key %s does not match prefix %s and suffix %s", key, d.Prefix, d.Suffix)
+	}
+
+	ts := strings.TrimSuffix(strings.TrimPrefix(key, d.Prefix), d.Suffix)
+	if timestamp, err := time.ParseInLocation(timeFormat, ts, time.Local); err != nil {
+		return time.Time{}, err
+	} else {
+		return timestamp, nil
+	}
+}
+
+func newS3Handler(destination S3DestinationDefinition) *S3Handler {
 	session := session.Must(session.NewSession())
 	client := s3.New(session, &aws.Config{
 		Retryer: &client.DefaultRetryer{NumMaxRetries: 3},
@@ -57,7 +84,7 @@ func newS3Handler(destination Destination) *S3Handler {
 
 type S3Handler struct {
 	client      s3iface.S3API
-	destination Destination
+	destination S3DestinationDefinition
 }
 
 func (h S3Handler) Handler(chunks <-chan Chunk, timestamp time.Time) (func() error, error) {
