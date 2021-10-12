@@ -27,7 +27,7 @@ func (n SlackNotifier) Format(o *OperationResult) map[string]interface{} {
 			"type": "section",
 			"text": map[string]string{
 				"type": "mrkdwn",
-				"text": fmt.Sprintf(":white_checkmark: Backup operation `%s` completed successfully.", o.Name()),
+				"text": fmt.Sprintf(":white_check_mark: Backup operation `%s` completed successfully.", o.Name()),
 			},
 		}
 

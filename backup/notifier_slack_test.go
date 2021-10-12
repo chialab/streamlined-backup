@@ -28,7 +28,7 @@ func TestSlackFormat(t *testing.T) {
 				"type": "section",
 				"text": map[string]string{
 					"type": "mrkdwn",
-					"text": ":white_checkmark: Backup operation `foo` completed successfully.",
+					"text": ":white_check_mark: Backup operation `foo` completed successfully.",
 				},
 			},
 		},
