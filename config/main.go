@@ -20,25 +20,4 @@ func LoadConfiguration(path string) (map[string]Task, error) {
 	}
 
 	return config, nil
-
-	// operations := Operations{}
-	// for name, operation := range config {
-	// 	handler, err := NewHandler(operation.Destination)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-
-	// 	logger := log.New(os.Stderr, fmt.Sprintf("[%s] ", name), log.LstdFlags|log.Lmsgprefix)
-	// 	operations = append(operations, Operation{
-	// 		Name:     name,
-	// 		Schedule: operation.Schedule,
-	// 		Command:  operation.Command,
-	// 		Cwd:      operation.Cwd,
-	// 		Env:      operation.Env,
-	// 		handler:  handler,
-	// 		logger:   logger,
-	// 	})
-	// }
-
-	// return &operations, nil
 }
