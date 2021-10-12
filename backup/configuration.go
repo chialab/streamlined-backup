@@ -29,7 +29,7 @@ func LoadConfiguration(path string) (*Operations, error) {
 			return nil, err
 		}
 
-		logger := log.New(os.Stderr, fmt.Sprintf("[%s]", name), log.LstdFlags)
+		logger := log.New(os.Stderr, fmt.Sprintf("[%s] ", name), log.LstdFlags|log.Lmsgprefix)
 		operations = append(operations, Operation{
 			Name:     name,
 			Schedule: operation.Schedule,
