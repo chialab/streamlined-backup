@@ -13,7 +13,7 @@ import (
 
 type TasksList []TaskInterface
 
-func NewTasksList(tasks map[string]config.Task) (*TasksList, error) {
+func NewTasksList(tasks map[string]config.Task) (TasksList, error) {
 	list := TasksList{}
 	for name, taskDfn := range tasks {
 		handler, err := handler.NewHandler(taskDfn.Destination)
@@ -22,7 +22,7 @@ func NewTasksList(tasks map[string]config.Task) (*TasksList, error) {
 		}
 
 		logger := log.New(os.Stderr, fmt.Sprintf("[%s] ", name), log.LstdFlags|log.Lmsgprefix)
-		list = append(list, Task{
+		task := &Task{
 			Name:     name,
 			Schedule: taskDfn.Schedule,
 			Command:  taskDfn.Command,
@@ -30,10 +30,11 @@ func NewTasksList(tasks map[string]config.Task) (*TasksList, error) {
 			Env:      taskDfn.Env,
 			handler:  handler,
 			logger:   logger,
-		})
+		}
+		list = append(list, task)
 	}
 
-	return &list, nil
+	return list, nil
 }
 
 func (t TasksList) Run(now time.Time, parallel uint) Results {
