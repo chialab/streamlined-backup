@@ -3,6 +3,7 @@ package backup
 import (
 	"errors"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -47,17 +48,16 @@ func TestNewTasksList(t *testing.T) {
 	if len(tasks) != 2 {
 		t.Fatalf("expected 2 tasks, got %d", len(tasks))
 	}
-	for idx, taskIf := range tasks {
+	names := []string{}
+	for _, taskIf := range tasks {
 		task, ok := taskIf.(*Task)
 		if !ok {
 			t.Fatalf("expected Task, got %T", taskIf)
 		}
 
-		switch idx {
-		case 0:
-			if task.Name != "foo" {
-				t.Errorf("expected task name 'foo', got %s", task.Name)
-			}
+		names = append(names, task.Name)
+		switch task.Name {
+		case "foo":
 			if !reflect.DeepEqual(task.Command, []string{"echo", "foo bar"}) {
 				t.Errorf("expected task command 'echo foo bar', got %v", task.Command)
 			}
@@ -70,10 +70,7 @@ func TestNewTasksList(t *testing.T) {
 			if task.logger.Prefix() != "[foo] " {
 				t.Errorf("expected log prefix '[foo] ', got %s", task.logger.Prefix())
 			}
-		case 1:
-			if task.Name != "bar" {
-				t.Errorf("expected task name 'bar', got %s", task.Name)
-			}
+		case "bar":
 			if !reflect.DeepEqual(task.Command, []string{"echo", "bar foo"}) {
 				t.Errorf("expected task command 'echo bar foo', got %v", task.Command)
 			}
@@ -87,6 +84,11 @@ func TestNewTasksList(t *testing.T) {
 				t.Errorf("expected log prefix '[bar] ', got %s", task.logger.Prefix())
 			}
 		}
+	}
+	sort.Strings(names) // Order isn't relevant
+
+	if !reflect.DeepEqual(names, []string{"bar", "foo"}) {
+		t.Errorf("expected tasks names 'bar', 'foo', got %v", names)
 	}
 }
 
