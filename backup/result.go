@@ -26,6 +26,7 @@ func NewResultSkipped(task *Task) Result {
 	return Result{
 		status: StatusSkipped,
 		task:   task,
+		logs:   []string{},
 	}
 }
 
@@ -50,6 +51,7 @@ func NewResultTimeout(task *Task, logs []string) Result {
 	return Result{
 		status: StatusTimeout,
 		task:   task,
+		logs:   logs,
 	}
 }
 

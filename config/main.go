@@ -10,6 +10,7 @@ type Task struct {
 	Command     []string
 	Cwd         string
 	Env         []string
+	Timeout     string
 	Destination Destination
 }
 

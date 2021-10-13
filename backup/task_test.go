@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/chialab/streamlined-backup/config"
 	"github.com/chialab/streamlined-backup/handler"
 	"github.com/chialab/streamlined-backup/utils"
+	"github.com/hashicorp/go-multierror"
 )
 
 func newTestLogger() (*log.Logger, func() []string) {
@@ -97,7 +99,7 @@ func TestNewTasks(t *testing.T) {
 	}
 }
 
-func TestNewTasksError(t *testing.T) {
+func TestNewTasksInvalidDestination(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.Task{
@@ -110,6 +112,85 @@ func TestNewTasksError(t *testing.T) {
 	} else if !errors.Is(err, handler.ErrUnknownDestination) {
 		t.Fatalf("expected ErrUnknownDestination, got %v", err)
 	}
+}
+
+func TestNewTasksInvalidTimeout(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Task{
+		Command: []string{"echo", "bar foo"},
+		Env:     []string{"BAR=foo"},
+		Timeout: "foo bar",
+		Destination: config.Destination{
+			Type: "s3",
+		},
+	}
+
+	expectedErr := `time: invalid duration "foo bar"`
+	if tasks, err := NewTask("bar", cfg); err == nil {
+		t.Fatalf("expected error, got %v", tasks)
+	} else if err.Error() != expectedErr {
+		t.Fatalf("expected %s, got %s", expectedErr, err)
+	}
+}
+
+func TestTaskAccessors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("with_given_values", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		task := &Task{
+			name: "test",
+			command: []string{
+				"bash",
+				"-c",
+				"echo 'hello world' \"${PWD:-/tmp}\" | bzip2",
+			},
+			cwd:     tmpDir,
+			timeout: 30 * time.Minute,
+		}
+
+		if name := task.Name(); name != "test" {
+			t.Errorf("expected test, got %s", name)
+		}
+		escaped := "bash -c 'echo '\"'\"'hello world'\"'\"' \"${PWD:-/tmp}\" | bzip2'"
+		if cmd := task.CommandString(); cmd != escaped {
+			t.Errorf("expected %s, got %s", escaped, cmd)
+		}
+		if wd := task.ActualCwd(); wd != tmpDir {
+			t.Errorf("expected %s, got %s", tmpDir, wd)
+		}
+		if timeout := task.Timeout(); timeout != 30*time.Minute {
+			t.Errorf("expected 30m, got %s", timeout)
+		}
+	})
+
+	t.Run("with_defaults", func(t *testing.T) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		task := &Task{
+			name:    "test",
+			command: []string{"echo", "hello world"},
+		}
+
+		if name := task.Name(); name != "test" {
+			t.Errorf("expected %s, got %s", "test", name)
+		}
+		escaped := "echo 'hello world'"
+		if cmd := task.CommandString(); cmd != escaped {
+			t.Errorf("expected %s, got %s", escaped, cmd)
+		}
+		if wd := task.ActualCwd(); wd != cwd {
+			t.Errorf("expected %s, got %s", cwd, wd)
+		}
+		if timeout := task.Timeout(); timeout != DEFAULT_TIMEOUT {
+			t.Errorf("expected default timeout (%s), got %s", DEFAULT_TIMEOUT, timeout)
+		}
+	})
 }
 
 func TestShouldRun(t *testing.T) {
@@ -295,7 +376,7 @@ func TestRunSkipped(t *testing.T) {
 func TestRunHandlerInitError(t *testing.T) {
 	t.Parallel()
 
-	initErr := errors.New("init error")
+	initErr := errors.New("handler could not be initialized: init error")
 	handler := &testHandler{initErr: initErr}
 	logger, lines := newTestLogger()
 	task := &Task{
@@ -306,7 +387,7 @@ func TestRunHandlerInitError(t *testing.T) {
 
 	if res := task.Run(time.Now()); res.Status() != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
-	} else if res.Error() != initErr {
+	} else if !errors.Is(res.Error(), initErr) {
 		t.Errorf("expected %v, got %v", initErr, res.Error())
 	}
 
@@ -314,7 +395,7 @@ func TestRunHandlerInitError(t *testing.T) {
 		t.Errorf("expected 0 chunks, got %d", len(handler.chunks))
 	}
 
-	expectedLogs := []string{"ERROR (Initialization failed): init error"}
+	expectedLogs := []string{"ERROR (Initialization failed): handler could not be initialized: init error"}
 	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
 		t.Errorf("expected %q, got %q", expectedLogs, logs)
 	}
@@ -348,133 +429,208 @@ func TestRunLastRunError(t *testing.T) {
 	}
 }
 
-func TestRunProcessSpawnError(t *testing.T) {
+func TestTaskRunner(t *testing.T) {
 	t.Parallel()
 
-	handler := &testHandler{}
-	logger, lines := newTestLogger()
-	task := &Task{
-		command: []string{"this-cmd-does-not-exist"},
-		handler: handler,
-		logger:  logger,
+	type testCase struct {
+		handler  *testHandler
+		command  []string
+		status   Status
+		errCodes []ErrorCode
+		logs     []string
+		chunks   []string
 	}
+	testCases := map[string]testCase{
+		"ok": {
+			handler:  &testHandler{},
+			command:  []string{"echo", "foo bar"},
+			status:   StatusSuccess,
+			errCodes: nil,
+			logs:     []string{"DONE"},
+			chunks:   []string{"foo bar\n"},
+		},
+		"handler_init_error": {
+			handler:  &testHandler{initErr: errors.New("test error")},
+			command:  []string{"echo", "foo bar"},
+			status:   StatusFailed,
+			errCodes: []ErrorCode{HandlerError},
+			logs:     []string{"ERROR (Initialization failed): test error"},
+			chunks:   []string{},
+		},
+		"handler_upload_error": {
+			handler:  &testHandler{err: errors.New("test error")},
+			command:  []string{"echo", "foo bar"},
+			status:   StatusFailed,
+			errCodes: []ErrorCode{HandlerError},
+			logs:     []string{"ERROR (Upload failed): test error"},
+			chunks:   []string{"foo bar\n"},
+		},
+		"handler_abort_error": {
+			handler:  &testHandler{err: errors.New("test error")},
+			command:  []string{"false"},
+			status:   StatusFailed,
+			errCodes: []ErrorCode{CommandFailedError, HandlerError},
+			logs:     []string{"ERROR (Command failed): exit status 1", "ERROR (Upload abort failed): test error"},
+			chunks:   []string{""},
+		},
+		"start_error": {
+			handler:  &testHandler{},
+			command:  []string{"this-cmd-does-not-exist"},
+			status:   StatusFailed,
+			errCodes: []ErrorCode{CommandStartError},
+			logs:     []string{"ERROR (Command start): exec: \"this-cmd-does-not-exist\": executable file not found in $PATH"},
+			chunks:   []string{""},
+		},
+		"non_zero_exit_code": {
+			handler:  &testHandler{},
+			command:  []string{"bash", "-c", "echo output && echo error >&2 && exit 42"},
+			status:   StatusFailed,
+			errCodes: []ErrorCode{CommandFailedError},
+			logs:     []string{"error", "ERROR (Command failed): exit status 42"},
+			chunks:   []string{"output\n"},
+		},
+		"timeout": {
+			handler:  &testHandler{},
+			command:  []string{"bash", "-c", "sleep 1 && echo output && echo error >&2 && exit 42"},
+			status:   StatusTimeout,
+			errCodes: []ErrorCode{CommandTimeoutError},
+			logs:     []string{"TIMEOUT (Command took more than 30ms)"},
+			chunks:   []string{""},
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			logger, lines := newTestLogger()
+			task := &Task{
+				command: tc.command,
+				timeout: 30 * time.Millisecond,
+				handler: tc.handler,
+				logger:  logger,
+			}
 
-	res := task.Run(time.Now())
-	if res.Status() != StatusFailed {
-		t.Errorf("unexpected result: %+v", res)
-	}
+			result := task.runner(time.Now())
+			if result.Status() != tc.status {
+				t.Errorf("expected status %+v, got %+v", tc.status, result.Status())
+			}
+			switch tc.status {
+			case StatusSuccess:
+				if result.Error() != nil {
+					t.Errorf("unexpected error, got %+v", result.Error())
+				}
+			default:
+				checkErr := func(code ErrorCode, errors ...*TaskError) bool {
+					for _, err := range errors {
+						if err.Code() == code {
+							return true
+						}
+					}
 
-	if len(handler.chunks) != 1 {
-		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
-	}
-	if chunk := handler.chunks[0]; !errors.Is(res.Error(), chunk.Error) {
-		t.Errorf("expected %q, got %q", res.Error(), chunk.Error)
-	} else if len(chunk.Data) > 0 {
-		t.Errorf("expected no data, got %q", chunk.Data)
-	}
+					return false
+				}
 
-	expectedLogs := []string{"ERROR (Command start): exec: \"this-cmd-does-not-exist\": executable file not found in $PATH"}
-	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
-		t.Errorf("expected %q, got %q", expectedLogs, logs)
+				taskErrors := []*TaskError{}
+				if err, ok := result.Error().(*TaskError); ok {
+					taskErrors = append(taskErrors, err)
+				} else if merr, ok := result.Error().(*multierror.Error); ok {
+					for _, err := range merr.Errors {
+						if err, ok := err.(*TaskError); ok {
+							taskErrors = append(taskErrors, err)
+						}
+					}
+				} else if err := new(TaskError); errors.As(result.Error(), &err) {
+					taskErrors = append(taskErrors, err)
+				}
+
+				for _, errCode := range tc.errCodes {
+					if !checkErr(errCode, taskErrors...) {
+						t.Errorf("expected error code %+v, got %+v", errCode, taskErrors)
+					}
+				}
+			}
+
+			if logs := lines(); !reflect.DeepEqual(logs, tc.logs) {
+				t.Errorf("expected logs %q, got %q", tc.logs, logs)
+			}
+
+			chunks := []string{}
+			for _, chunk := range tc.handler.chunks {
+				chunks = append(chunks, string(chunk.Data))
+			}
+			if !reflect.DeepEqual(chunks, tc.chunks) {
+				t.Errorf("expected data %+v, got %+v", tc.chunks, chunks)
+			}
+		})
 	}
 }
 
-func TestRunProcessExecutionError(t *testing.T) {
+func TestTaskExecCommand(t *testing.T) {
 	t.Parallel()
 
-	handler := &testHandler{}
-	logger, lines := newTestLogger()
-	task := &Task{
-		command: []string{"bash", "-c", "echo foo bar; exit 1"},
-		handler: handler,
-		logger:  logger,
+	type testCase struct {
+		command []string
+		errCode *ErrorCode
+		logs    []string
+		stdout  string
+		stderr  string
 	}
-
-	res := task.Run(time.Now())
-	if res.Status() != StatusFailed {
-		t.Errorf("unexpected result: %+v", res)
+	errCode := func(code ErrorCode) *ErrorCode { return &code }
+	testCases := map[string]testCase{
+		"ok": {
+			command: []string{"echo", "foo bar"},
+			errCode: nil,
+			logs:    []string{},
+			stdout:  "foo bar\n",
+			stderr:  "",
+		},
+		"start_error": {
+			command: []string{"this-cmd-does-not-exist"},
+			errCode: errCode(CommandStartError),
+			logs:    []string{"ERROR (Command start): exec: \"this-cmd-does-not-exist\": executable file not found in $PATH"},
+			stdout:  "",
+			stderr:  "",
+		},
+		"non_zero_exit_code": {
+			command: []string{"bash", "-c", "echo output && echo error >&2 && exit 42"},
+			errCode: errCode(CommandFailedError),
+			logs:    []string{"ERROR (Command failed): exit status 42"},
+			stdout:  "output\n",
+			stderr:  "error\n",
+		},
+		"timeout": {
+			command: []string{"bash", "-c", "sleep 1 && echo output && echo error >&2 && exit 42"},
+			errCode: errCode(CommandTimeoutError),
+			logs:    []string{"TIMEOUT (Command took more than 30ms)"},
+			stdout:  "",
+			stderr:  "",
+		},
 	}
-
-	if len(handler.chunks) != 1 {
-		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
-	}
-	if chunk := handler.chunks[0]; !errors.Is(res.Error(), chunk.Error) {
-		t.Errorf("expected %q, got %q", res.Error(), chunk.Error)
-	} else if string(chunk.Data) != "foo bar\n" {
-		t.Errorf("expected %q, got %q", "foo bar\n", chunk.Data)
-	}
-
-	expectedLogs := []string{"ERROR (Command failed): exit status 1"}
-	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
-		t.Errorf("expected %q, got %q", expectedLogs, logs)
-	}
-}
-
-func TestRunProcessHandlerError(t *testing.T) {
-	t.Parallel()
-
-	testErr := errors.New("test error")
-	handler := &testHandler{}
-	logger, lines := newTestLogger()
-	task := &Task{
-		command: []string{"bash", "-c", "echo foo bar"},
-		handler: handler,
-		logger:  logger,
-	}
-
-	handler.err = testErr
-
-	if res := task.Run(time.Now()); res.Status() != StatusFailed {
-		t.Errorf("unexpected result: %+v", res)
-	} else if !errors.Is(res.Error(), testErr) {
-		t.Errorf("expected %q, got %q", testErr, res.Error())
-	}
-
-	if len(handler.chunks) != 1 {
-		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
-	}
-	if chunk := handler.chunks[0]; chunk.Error != nil {
-		t.Errorf("unexpected error: %s", chunk.Error)
-	} else if string(chunk.Data) != "foo bar\n" {
-		t.Errorf("expected %q, got %q", "foo bar\n", chunk.Data)
-	}
-
-	expectedLogs := []string{"ERROR (Upload failed): test error"}
-	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
-		t.Errorf("expected %q, got %q", expectedLogs, logs)
-	}
-}
-
-func TestRunAbortError(t *testing.T) {
-	t.Parallel()
-
-	abortErr := errors.New("test error")
-	handler := &testHandler{}
-	logger, lines := newTestLogger()
-	task := &Task{
-		command: []string{"bash", "-c", "echo foo bar; exit 1"},
-		handler: handler,
-		logger:  logger,
-	}
-	handler.err = abortErr
-
-	if res := task.Run(time.Now()); res.Status() != StatusFailed {
-		t.Errorf("unexpected result: %+v", res)
-	} else if !errors.Is(res.Error(), abortErr) {
-		t.Errorf("expected %q, got %q", abortErr, res.Error())
-	}
-
-	if len(handler.chunks) != 1 {
-		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
-	}
-	if chunk := handler.chunks[0]; errors.Is(chunk.Error, abortErr) {
-		t.Errorf("expected %q, got %q", abortErr, chunk.Error)
-	} else if string(chunk.Data) != "foo bar\n" {
-		t.Errorf("expected %q, got %q", "foo bar\n", chunk.Data)
-	}
-
-	expectedLogs := []string{"ERROR (Command failed): exit status 1", "ERROR (Upload abort failed): test error"}
-	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
-		t.Errorf("expected %q, got %q", expectedLogs, logs)
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			logger, lines := newTestLogger()
+			task := &Task{
+				command: tc.command,
+				timeout: 30 * time.Millisecond,
+				logger:  logger,
+			}
+			stdout := bytes.NewBuffer(nil)
+			stderr := bytes.NewBuffer(nil)
+			err := task.execCommand(stdout, stderr)
+			if tc.errCode == nil && err != nil {
+				t.Errorf("unexpected error: %s", err)
+			} else if tc.errCode != nil && err == nil {
+				t.Errorf("expected error, got nil")
+			} else if taskErr, ok := err.(*TaskError); err != nil && (!ok || taskErr.Code() != *tc.errCode) {
+				t.Errorf("expected error %+v, got %+v", tc.errCode, err)
+			}
+			if logs := lines(); !reflect.DeepEqual(logs, tc.logs) {
+				t.Errorf("expected logs %q, got %q", tc.logs, logs)
+			}
+			if data := stdout.String(); data != tc.stdout {
+				t.Errorf("expected stdout %q, got %q", tc.stdout, data)
+			}
+			if data := stderr.String(); data != tc.stderr {
+				t.Errorf("expected stderr %q, got %q", tc.stderr, data)
+			}
+		})
 	}
 }
