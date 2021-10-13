@@ -29,15 +29,15 @@ func TestSlackFormat(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		input    *backup.Result
+		input    backup.Result
 		expected map[string]interface{}
 	}{
 		"skipped": {
-			input:    &backup.Result{Status: backup.StatusSkipped},
+			input:    backup.NewResultSkipped(nil),
 			expected: nil,
 		},
 		"success": {
-			input: &backup.Result{Status: backup.StatusSuccess, Task: taskFoo},
+			input: backup.NewResultSuccess(taskFoo, []string{}),
 			expected: map[string]interface{}{
 				"type": "section",
 				"text": map[string]string{
@@ -47,12 +47,7 @@ func TestSlackFormat(t *testing.T) {
 			},
 		},
 		"failure": {
-			input: &backup.Result{
-				Status: backup.StatusFailed,
-				Error:  fmt.Errorf("test error"),
-				Logs:   []string{"test log 1", "test log 2", ""},
-				Task:   taskBar,
-			},
+			input: backup.NewResultFailed(taskBar, errors.New("test error"), []string{"test log 1", "test log 2", ""}),
 			expected: map[string]interface{}{
 				"type": "section",
 				"text": map[string]string{
@@ -82,7 +77,7 @@ func TestSlackFormat(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			actual := new(SlackNotifier).Format(tc.input)
+			actual := new(SlackNotifier).Format(&tc.input)
 			if !reflect.DeepEqual(actual, tc.expected) {
 				t.Errorf("expected %v, got %v", tc.expected, actual)
 			}
@@ -98,8 +93,8 @@ func TestSlackNotify(t *testing.T) {
 		t.Fatal(err)
 	}
 	results := []backup.Result{
-		{Status: backup.StatusSkipped},
-		{Status: backup.StatusSuccess, Task: task},
+		backup.NewResultSkipped(nil),
+		backup.NewResultSuccess(task, []string{}),
 	}
 	expectedBody := fmt.Sprintf(
 		`{"blocks":[{"text":{"text":":white_check_mark: Backup task %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",
@@ -158,8 +153,8 @@ func TestSlackNotifyEmpty(t *testing.T) {
 	t.Parallel()
 
 	results := []backup.Result{
-		{Status: backup.StatusSkipped},
-		{Status: backup.StatusSkipped},
+		backup.NewResultSkipped(nil),
+		backup.NewResultSkipped(nil),
 	}
 
 	requests := []struct {
@@ -207,8 +202,8 @@ func TestSlackNotifyError(t *testing.T) {
 		t.Fatal(err)
 	}
 	results := []backup.Result{
-		{Status: backup.StatusSkipped},
-		{Status: backup.StatusSuccess, Task: task},
+		backup.NewResultSkipped(nil),
+		backup.NewResultSuccess(task, []string{}),
 	}
 	expectedBody := fmt.Sprintf(
 		`{"blocks":[{"text":{"text":":white_check_mark: Backup task %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",

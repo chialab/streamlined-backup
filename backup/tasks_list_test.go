@@ -158,32 +158,32 @@ func TestRunTasks(t *testing.T) {
 	meter := newConcurrenceCounter()
 	tasks := TasksList{
 		testTask{
-			result:      Result{Status: StatusSuccess, Logs: []string{"success"}},
+			result:      NewResultSuccess(nil, []string{"success 1"}),
 			delay:       time.Millisecond * 10,
 			concurrence: meter,
 		},
 		testTask{
-			result:      Result{Status: StatusSkipped, Logs: []string{"skipped"}},
+			result:      NewResultSkipped(nil),
 			delay:       time.Millisecond * 10,
 			concurrence: meter,
 		},
 		testTask{
-			result:      Result{Status: StatusFailed, Logs: []string{"failed"}},
+			result:      NewResultFailed(nil, errors.New("test error 1"), []string{"failed 1"}),
 			delay:       time.Millisecond * 10,
 			concurrence: meter,
 		},
 		testTask{
-			result:      Result{Status: StatusSuccess, Logs: []string{"success"}},
+			result:      NewResultSuccess(nil, []string{"success 2"}),
 			delay:       time.Millisecond * 10,
 			concurrence: meter,
 		},
 		testTask{
-			result:      Result{Status: StatusSuccess, Logs: []string{"success"}},
+			result:      NewResultSuccess(nil, []string{"success 3"}),
 			delay:       time.Millisecond * 10,
 			concurrence: meter,
 		},
 		testTask{
-			result:      Result{Status: StatusFailed, Logs: []string{"failed"}},
+			result:      NewResultFailed(nil, errors.New("test error 2"), []string{"failed 2"}),
 			delay:       time.Millisecond * 10,
 			concurrence: meter,
 		},
@@ -195,7 +195,7 @@ func TestRunTasks(t *testing.T) {
 
 	count := map[Status]int{}
 	for _, result := range results {
-		count[result.Status]++
+		count[result.Status()]++
 	}
 	if count[StatusSuccess] != 3 {
 		t.Errorf("expected 3 success tasks, got %d", count[StatusSuccess])

@@ -20,7 +20,7 @@ func NewSlackNotifier(webhooks ...string) *SlackNotifier {
 }
 
 func (n SlackNotifier) Format(o *backup.Result) map[string]interface{} {
-	switch o.Status {
+	switch o.Status() {
 	case backup.StatusSuccess:
 		return map[string]interface{}{
 			"type": "section",
@@ -31,7 +31,7 @@ func (n SlackNotifier) Format(o *backup.Result) map[string]interface{} {
 		}
 
 	case backup.StatusFailed:
-		logs := o.Logs
+		logs := o.Logs()
 		if len(logs) == 0 {
 			logs = []string{"No logs available."}
 		} else if len(logs) > 13 {
@@ -57,7 +57,7 @@ func (n SlackNotifier) Format(o *backup.Result) map[string]interface{} {
 				},
 				{
 					"type": "mrkdwn",
-					"text": fmt.Sprintf("*Error:*\n```\n%s\n```", strings.TrimSpace(o.Error.Error())),
+					"text": fmt.Sprintf("*Error:*\n```\n%s\n```", strings.TrimSpace(o.Error().Error())),
 				},
 				{
 					"type": "mrkdwn",

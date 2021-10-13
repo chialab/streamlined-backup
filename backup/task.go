@@ -87,38 +87,31 @@ func (t Task) Run(now time.Time) Result {
 	if run, err := t.shouldRun(now); err != nil {
 		t.logger.Printf("ERROR (Could not find last run): %s", err)
 
-		return Result{
-			Task:   &t,
-			Status: StatusFailed,
-			Error:  err,
-		}
+		return NewResultFailed(&t, err, []string{})
 	} else if !run {
 		t.logger.Print("SKIPPED")
 
-		return Result{
-			Task:   &t,
-			Status: StatusSkipped,
-		}
+		return NewResultSkipped(&t)
 	}
 
 	return t.runner(now)
 }
 
 func (t Task) runner(now time.Time) (result Result) {
-	result = Result{Task: &t}
+	result = Result{task: &t}
 
 	logsWriter := utils.NewLogWriter(t.logger)
 	defer func() {
 		logsWriter.Close()
-		result.Logs = logsWriter.Lines()
+		result.logs = logsWriter.Lines()
 	}()
 
 	writer := utils.NewChunkWriter(CHUNK_SIZE, CHUNK_BUFFER)
 	wait, initErr := t.handler.Handler(writer.Chunks, now)
 	if initErr != nil {
 		t.logger.Printf("ERROR (Initialization failed): %s", initErr)
-		result.Status = StatusFailed
-		result.Error = initErr
+		result.status = StatusFailed
+		result.err = initErr
 
 		return
 	}
@@ -126,13 +119,13 @@ func (t Task) runner(now time.Time) (result Result) {
 		if panicked := recover(); panicked != nil {
 			panicErr := utils.ToError(panicked)
 
-			result.Status = StatusFailure
-			result.Error = multierror.Append(result.Error, panicErr)
+			result.status = StatusFailed
+			result.err = multierror.Append(result.err, panicErr)
 			if writer != nil {
 				writer.Abort(panicErr)
 				if err := wait(); err != nil {
 					t.logger.Printf("ERROR (Upload abort failed): %s", err)
-					result.Error = multierror.Append(result.Error, err)
+					result.err = multierror.Append(result.err, err)
 				}
 			}
 		}
@@ -163,7 +156,7 @@ func (t Task) runner(now time.Time) (result Result) {
 	}
 
 	t.logger.Print("DONE")
-	result.Status = StatusSuccess
+	result.status = StatusSuccess
 
 	return
 }

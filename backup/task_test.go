@@ -203,10 +203,10 @@ func TestRun(t *testing.T) {
 	expectedData := fmt.Sprintf("barbaz\n%s\n", tmpDir)
 	expectedResultLogs := []string{"logging"}
 
-	if res := task.Run(time.Now()); res.Status != StatusSuccess {
+	if res := task.Run(time.Now()); res.Status() != StatusSuccess {
 		t.Errorf("unexpected error: %+v", res)
-	} else if !reflect.DeepEqual(res.Logs, expectedResultLogs) {
-		t.Errorf("expected %q, got %q", expectedResultLogs, res.Logs)
+	} else if !reflect.DeepEqual(res.Logs(), expectedResultLogs) {
+		t.Errorf("expected %q, got %q", expectedResultLogs, res.Logs())
 	}
 	if len(handler.chunks) != 1 {
 		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
@@ -236,7 +236,7 @@ func TestRunLongOutput(t *testing.T) {
 		logger:  logger,
 	}
 
-	if res := task.Run(time.Now()); res.Status != StatusSuccess {
+	if res := task.Run(time.Now()); res.Status() != StatusSuccess {
 		t.Errorf("unexpected error: %+v", res)
 	}
 	if len(handler.chunks) != 2 {
@@ -278,7 +278,7 @@ func TestRunSkipped(t *testing.T) {
 	}
 
 	now := time.Date(2021, 10, 12, 10, 59, 38, 0, time.Local)
-	if res := task.Run(now); res.Status != StatusSkipped {
+	if res := task.Run(now); res.Status() != StatusSkipped {
 		t.Errorf("unexpected result: %+v", res)
 	}
 
@@ -304,10 +304,10 @@ func TestRunHandlerInitError(t *testing.T) {
 		logger:  logger,
 	}
 
-	if res := task.Run(time.Now()); res.Status != StatusFailed {
+	if res := task.Run(time.Now()); res.Status() != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
-	} else if res.Error != initErr {
-		t.Errorf("expected %v, got %v", initErr, res.Error)
+	} else if res.Error() != initErr {
+		t.Errorf("expected %v, got %v", initErr, res.Error())
 	}
 
 	if len(handler.chunks) != 0 {
@@ -332,10 +332,10 @@ func TestRunLastRunError(t *testing.T) {
 		logger:  logger,
 	}
 
-	if res := task.Run(time.Now()); res.Status != StatusFailed {
+	if res := task.Run(time.Now()); res.Status() != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
-	} else if res.Error != lastRunErr {
-		t.Errorf("expected %v, got %v", lastRunErr, res.Error)
+	} else if res.Error() != lastRunErr {
+		t.Errorf("expected %v, got %v", lastRunErr, res.Error())
 	}
 
 	if len(handler.chunks) != 0 {
@@ -360,15 +360,15 @@ func TestRunProcessSpawnError(t *testing.T) {
 	}
 
 	res := task.Run(time.Now())
-	if res.Status != StatusFailed {
+	if res.Status() != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
 	}
 
 	if len(handler.chunks) != 1 {
 		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
 	}
-	if chunk := handler.chunks[0]; !errors.Is(res.Error, chunk.Error) {
-		t.Errorf("expected %q, got %q", res.Error, chunk.Error)
+	if chunk := handler.chunks[0]; !errors.Is(res.Error(), chunk.Error) {
+		t.Errorf("expected %q, got %q", res.Error(), chunk.Error)
 	} else if len(chunk.Data) > 0 {
 		t.Errorf("expected no data, got %q", chunk.Data)
 	}
@@ -391,15 +391,15 @@ func TestRunProcessExecutionError(t *testing.T) {
 	}
 
 	res := task.Run(time.Now())
-	if res.Status != StatusFailed {
+	if res.Status() != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
 	}
 
 	if len(handler.chunks) != 1 {
 		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
 	}
-	if chunk := handler.chunks[0]; !errors.Is(res.Error, chunk.Error) {
-		t.Errorf("expected %q, got %q", res.Error, chunk.Error)
+	if chunk := handler.chunks[0]; !errors.Is(res.Error(), chunk.Error) {
+		t.Errorf("expected %q, got %q", res.Error(), chunk.Error)
 	} else if string(chunk.Data) != "foo bar\n" {
 		t.Errorf("expected %q, got %q", "foo bar\n", chunk.Data)
 	}
@@ -424,10 +424,10 @@ func TestRunProcessHandlerError(t *testing.T) {
 
 	handler.err = testErr
 
-	if res := task.Run(time.Now()); res.Status != StatusFailed {
+	if res := task.Run(time.Now()); res.Status() != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
-	} else if !errors.Is(res.Error, testErr) {
-		t.Errorf("expected %q, got %q", testErr, res.Error)
+	} else if !errors.Is(res.Error(), testErr) {
+		t.Errorf("expected %q, got %q", testErr, res.Error())
 	}
 
 	if len(handler.chunks) != 1 {
@@ -458,10 +458,10 @@ func TestRunAbortError(t *testing.T) {
 	}
 	handler.err = abortErr
 
-	if res := task.Run(time.Now()); res.Status != StatusFailed {
+	if res := task.Run(time.Now()); res.Status() != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
-	} else if !errors.Is(res.Error, abortErr) {
-		t.Errorf("expected %q, got %q", abortErr, res.Error)
+	} else if !errors.Is(res.Error(), abortErr) {
+		t.Errorf("expected %q, got %q", abortErr, res.Error())
 	}
 
 	if len(handler.chunks) != 1 {
