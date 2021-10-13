@@ -61,6 +61,18 @@ func TestLogWriter(t *testing.T) {
 			},
 			final: []string{"foobar", "baz", "bazinga", "go lang go"},
 		},
+		"with_underlying_logger_empty_final_line": {
+			useUnderlyingLogger: true,
+			steps: []struct {
+				input    string
+				expected []string
+			}{
+				{input: "foo", expected: []string{}},
+				{input: "bar\n", expected: []string{"foobar"}},
+				{input: "baz\nbazinga\n", expected: []string{"foobar", "baz", "bazinga"}},
+			},
+			final: []string{"foobar", "baz", "bazinga"},
+		},
 	}
 
 	for name, tc := range testCases {

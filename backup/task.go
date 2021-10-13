@@ -16,6 +16,8 @@ import (
 
 const CHUNK_SIZE = 10 << 20
 
+const CHUNK_BUFFER = 8
+
 type Task struct {
 	name     string
 	schedule utils.ScheduleExpression
@@ -111,7 +113,7 @@ func (t Task) runner(now time.Time) (result Result) {
 		result.Logs = logsWriter.Lines()
 	}()
 
-	writer := utils.NewChunkWriter(CHUNK_SIZE)
+	writer := utils.NewChunkWriter(CHUNK_SIZE, CHUNK_BUFFER)
 	wait, initErr := t.handler.Handler(writer.Chunks, now)
 	if initErr != nil {
 		t.logger.Printf("ERROR (Initialization failed): %s", initErr)

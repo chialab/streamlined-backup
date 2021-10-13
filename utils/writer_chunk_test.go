@@ -42,7 +42,7 @@ func TestChunkReader(t *testing.T) {
 func TestChunkWriter(t *testing.T) {
 	t.Parallel()
 
-	writer := NewChunkWriter(8)
+	writer := NewChunkWriter(8, 8)
 
 	if b, err := writer.Write([]byte("foo")); err != nil {
 		t.Fatalf("unexpected error: %s", err)
@@ -100,7 +100,7 @@ func TestChunkWriter(t *testing.T) {
 func TestChunkWriterAbort(t *testing.T) {
 	t.Parallel()
 
-	writer := NewChunkWriter(8)
+	writer := NewChunkWriter(8, 8)
 
 	if b, err := writer.Write([]byte("foo")); err != nil {
 		t.Fatalf("unexpected error: %s", err)
@@ -113,7 +113,9 @@ func TestChunkWriterAbort(t *testing.T) {
 	}
 
 	testErr := errors.New("test error")
-	writer.Abort(testErr)
+	if err := writer.Abort(testErr); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
 
 	if len(writer.Chunks) != 1 {
 		t.Errorf("chunks should have 1 element, got %d", len(writer.Chunks))
@@ -121,5 +123,34 @@ func TestChunkWriterAbort(t *testing.T) {
 		t.Errorf("first chunk data should be 'foo', got %s", string(chunk.Data))
 	} else if chunk.Error != testErr {
 		t.Errorf("expected %q, got %q", testErr, chunk.Error)
+	}
+}
+
+func TestChunkWriterClosed(t *testing.T) {
+	t.Parallel()
+
+	writer := NewChunkWriter(8, 8)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+
+	if b, err := writer.Write([]byte("foo")); !errors.Is(err, ClosedWriterError) {
+		t.Errorf("expected ClosedWriterError, got %s", err)
+	} else if b != 0 {
+		t.Errorf("expected 0 bytes written, got %d", b)
+	}
+
+	if b, err := writer.Write([]byte("foo")); !errors.Is(err, ClosedWriterError) {
+		t.Errorf("expected ClosedWriterError, got %s", err)
+	} else if b != 0 {
+		t.Errorf("expected 0 bytes written, got %d", b)
+	}
+
+	if err := writer.Abort(errors.New("test error")); !errors.Is(err, ClosedWriterError) {
+		t.Errorf("expected ClosedWriterError, got %s", err)
+	}
+
+	if err := writer.Close(); !errors.Is(err, ClosedWriterError) {
+		t.Errorf("expected ClosedWriterError, got %s", err)
 	}
 }
