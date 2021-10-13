@@ -55,7 +55,10 @@ func (t Task) Run(now time.Time) (result Result) {
 	}
 
 	logsWriter := utils.NewLogWriter(t.logger)
-	defer logsWriter.Close()
+	defer func() {
+		logsWriter.Close()
+		result.Logs = logsWriter.Lines()
+	}()
 
 	writer := utils.NewChunkWriter(CHUNK_SIZE)
 	wait, initErr := t.handler.Handler(writer.Chunks, now)

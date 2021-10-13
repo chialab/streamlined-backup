@@ -31,6 +31,15 @@ func (n SlackNotifier) Format(o *backup.Result) map[string]interface{} {
 		}
 
 	case backup.StatusFailure:
+		logs := o.Logs
+		if len(logs) == 0 {
+			logs = []string{"No logs available."}
+		} else if len(logs) > 13 {
+			tail := logs[len(logs)-5:]
+			logs = append(logs[:5], fmt.Sprintf("... %d lines omitted ...", len(logs)-10))
+			logs = append(logs, tail...)
+		}
+
 		return map[string]interface{}{
 			"type": "section",
 			"text": map[string]string{
@@ -52,7 +61,7 @@ func (n SlackNotifier) Format(o *backup.Result) map[string]interface{} {
 				},
 				{
 					"type": "mrkdwn",
-					"text": fmt.Sprintf("*Log lines (written to stderr):*\n```\n%s\n```", strings.TrimSpace(strings.Join(o.Logs, "\n"))),
+					"text": fmt.Sprintf("*Log lines (written to stderr):*\n```\n%s\n```", strings.TrimSpace(strings.Join(logs, "\n"))),
 				},
 			},
 		}
