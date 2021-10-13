@@ -8,6 +8,8 @@ import (
 )
 
 func TestResultAccessors(t *testing.T) {
+	t.Parallel()
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

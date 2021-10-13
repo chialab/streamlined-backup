@@ -23,6 +23,8 @@ func (t testTask) Run(now time.Time) Result {
 }
 
 func TestNewTasksList(t *testing.T) {
+	t.Parallel()
+
 	cfg := map[string]config.Task{
 		"foo": {
 			Command: []string{"echo", "foo bar"},
@@ -93,6 +95,8 @@ func TestNewTasksList(t *testing.T) {
 }
 
 func TestNewTasksListError(t *testing.T) {
+	t.Parallel()
+
 	cfg := map[string]config.Task{
 		"foo": {
 			Command: []string{"echo", "foo bar"},
@@ -115,6 +119,8 @@ func TestNewTasksListError(t *testing.T) {
 }
 
 func TestRunTasks(t *testing.T) {
+	t.Parallel()
+
 	tasks := TasksList{
 		testTask{
 			result: Result{Status: StatusSuccess, Logs: []string{"fourth to complete"}},

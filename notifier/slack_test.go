@@ -16,6 +16,7 @@ import (
 
 func TestSlackFormat(t *testing.T) {
 	t.Parallel()
+
 	tmpDir := t.TempDir()
 	testCases := map[string]struct {
 		input    *backup.Result
@@ -80,6 +81,8 @@ func TestSlackFormat(t *testing.T) {
 }
 
 func TestSlackNotify(t *testing.T) {
+	t.Parallel()
+
 	results := []backup.Result{
 		{Status: backup.StatusSkipped},
 		{Status: backup.StatusSuccess, Task: &backup.Task{Name: "foo"}},
@@ -138,6 +141,8 @@ func TestSlackNotify(t *testing.T) {
 }
 
 func TestSlackNotifyEmpty(t *testing.T) {
+	t.Parallel()
+
 	results := []backup.Result{
 		{Status: backup.StatusSkipped},
 		{Status: backup.StatusSkipped},
@@ -181,6 +186,8 @@ func TestSlackNotifyEmpty(t *testing.T) {
 }
 
 func TestSlackNotifyError(t *testing.T) {
+	t.Parallel()
+
 	results := []backup.Result{
 		{Status: backup.StatusSkipped},
 		{Status: backup.StatusSuccess, Task: &backup.Task{Name: "foo"}},
@@ -255,6 +262,8 @@ func TestSlackNotifyError(t *testing.T) {
 }
 
 func TestSlackError(t *testing.T) {
+	t.Parallel()
+
 	err := errors.New("test error")
 	expectedBody := fmt.Sprintf(
 		`{"blocks":[{"text":{"text":":rotating_light: *Error running backup task!* @channel\n%s","type":"mrkdwn"},"type":"section"}]}`+"\n",
