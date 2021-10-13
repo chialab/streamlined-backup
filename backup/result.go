@@ -3,16 +3,16 @@ package backup
 type Status string
 
 const (
-	StatusSuccess Status = "success"
-	StatusFailure Status = "failure"
 	StatusSkipped Status = "skipped"
+	StatusSuccess Status = "success"
+	StatusFailed  Status = "failed"
 )
 
 func (status Status) Priority() uint {
 	switch status {
 	case StatusSuccess:
 		return 10
-	case StatusFailure:
+	case StatusFailed:
 		return 20
 	default:
 		return 0
@@ -24,8 +24,8 @@ const UNKNOWN_TASK = "(unknown)"
 type Result struct {
 	Status Status
 	Task   *Task
-	Logs   []string
 	Error  error
+	Logs   []string
 }
 
 func (r Result) Name() string {

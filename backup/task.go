@@ -89,7 +89,7 @@ func (t Task) Run(now time.Time) Result {
 
 		return Result{
 			Task:   &t,
-			Status: StatusFailure,
+			Status: StatusFailed,
 			Error:  err,
 		}
 	} else if !run {
@@ -117,7 +117,7 @@ func (t Task) runner(now time.Time) (result Result) {
 	wait, initErr := t.handler.Handler(writer.Chunks, now)
 	if initErr != nil {
 		t.logger.Printf("ERROR (Initialization failed): %s", initErr)
-		result.Status = StatusFailure
+		result.Status = StatusFailed
 		result.Error = initErr
 
 		return

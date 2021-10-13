@@ -30,7 +30,7 @@ func (n SlackNotifier) Format(o *backup.Result) map[string]interface{} {
 			},
 		}
 
-	case backup.StatusFailure:
+	case backup.StatusFailed:
 		logs := o.Logs
 		if len(logs) == 0 {
 			logs = []string{"No logs available."}

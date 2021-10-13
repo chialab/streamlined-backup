@@ -304,7 +304,7 @@ func TestRunHandlerInitError(t *testing.T) {
 		logger:  logger,
 	}
 
-	if res := task.Run(time.Now()); res.Status != StatusFailure {
+	if res := task.Run(time.Now()); res.Status != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
 	} else if res.Error != initErr {
 		t.Errorf("expected %v, got %v", initErr, res.Error)
@@ -332,7 +332,7 @@ func TestRunLastRunError(t *testing.T) {
 		logger:  logger,
 	}
 
-	if res := task.Run(time.Now()); res.Status != StatusFailure {
+	if res := task.Run(time.Now()); res.Status != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
 	} else if res.Error != lastRunErr {
 		t.Errorf("expected %v, got %v", lastRunErr, res.Error)
@@ -360,7 +360,7 @@ func TestRunProcessSpawnError(t *testing.T) {
 	}
 
 	res := task.Run(time.Now())
-	if res.Status != StatusFailure {
+	if res.Status != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
 	}
 
@@ -391,7 +391,7 @@ func TestRunProcessExecutionError(t *testing.T) {
 	}
 
 	res := task.Run(time.Now())
-	if res.Status != StatusFailure {
+	if res.Status != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
 	}
 
@@ -424,7 +424,7 @@ func TestRunProcessHandlerError(t *testing.T) {
 
 	handler.err = testErr
 
-	if res := task.Run(time.Now()); res.Status != StatusFailure {
+	if res := task.Run(time.Now()); res.Status != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
 	} else if !errors.Is(res.Error, testErr) {
 		t.Errorf("expected %q, got %q", testErr, res.Error)
@@ -458,7 +458,7 @@ func TestRunAbortError(t *testing.T) {
 	}
 	handler.err = abortErr
 
-	if res := task.Run(time.Now()); res.Status != StatusFailure {
+	if res := task.Run(time.Now()); res.Status != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
 	} else if !errors.Is(res.Error, abortErr) {
 		t.Errorf("expected %q, got %q", abortErr, res.Error)

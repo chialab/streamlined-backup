@@ -81,11 +81,11 @@ func TestResultsSort(t *testing.T) {
 	t.Parallel()
 
 	results := Results{
-		{Status: StatusFailure, Task: &Task{name: "test e"}},
+		{Status: StatusFailed, Task: &Task{name: "test e"}},
 		{Status: StatusSuccess, Task: &Task{name: "test b"}},
 		{Status: StatusSkipped, Task: &Task{name: "test d"}},
 		{Status: StatusSuccess, Task: &Task{name: "test c"}},
-		{Status: StatusFailure, Task: &Task{name: "test a"}},
+		{Status: StatusFailed, Task: &Task{name: "test a"}},
 	}
 	if results.Len() != 5 {
 		t.Errorf("expected 5 results, got %d", results.Len())
@@ -103,8 +103,8 @@ func TestResultsSort(t *testing.T) {
 		{Status: StatusSkipped, Task: &Task{name: "test d"}},
 		{Status: StatusSuccess, Task: &Task{name: "test b"}},
 		{Status: StatusSuccess, Task: &Task{name: "test c"}},
-		{Status: StatusFailure, Task: &Task{name: "test a"}},
-		{Status: StatusFailure, Task: &Task{name: "test e"}},
+		{Status: StatusFailed, Task: &Task{name: "test a"}},
+		{Status: StatusFailed, Task: &Task{name: "test e"}},
 	}
 	if !reflect.DeepEqual(results, expected) {
 		t.Errorf("expected %v, got %v", expected, results)

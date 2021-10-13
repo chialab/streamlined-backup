@@ -168,7 +168,7 @@ func TestRunTasks(t *testing.T) {
 			concurrence: meter,
 		},
 		testTask{
-			result:      Result{Status: StatusFailure, Logs: []string{"failed"}},
+			result:      Result{Status: StatusFailed, Logs: []string{"failed"}},
 			delay:       time.Millisecond * 10,
 			concurrence: meter,
 		},
@@ -183,7 +183,7 @@ func TestRunTasks(t *testing.T) {
 			concurrence: meter,
 		},
 		testTask{
-			result:      Result{Status: StatusFailure, Logs: []string{"failed"}},
+			result:      Result{Status: StatusFailed, Logs: []string{"failed"}},
 			delay:       time.Millisecond * 10,
 			concurrence: meter,
 		},
@@ -200,8 +200,8 @@ func TestRunTasks(t *testing.T) {
 	if count[StatusSuccess] != 3 {
 		t.Errorf("expected 3 success tasks, got %d", count[StatusSuccess])
 	}
-	if count[StatusFailure] != 2 {
-		t.Errorf("expected 2 failed tasks, got %d", count[StatusFailure])
+	if count[StatusFailed] != 2 {
+		t.Errorf("expected 2 failed tasks, got %d", count[StatusFailed])
 	}
 	if count[StatusSkipped] != 1 {
 		t.Errorf("expected 1 skipped task, got %d", count[StatusSkipped])

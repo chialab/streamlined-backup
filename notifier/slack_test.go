@@ -48,7 +48,7 @@ func TestSlackFormat(t *testing.T) {
 		},
 		"failure": {
 			input: &backup.Result{
-				Status: backup.StatusFailure,
+				Status: backup.StatusFailed,
 				Error:  fmt.Errorf("test error"),
 				Logs:   []string{"test log 1", "test log 2", ""},
 				Task:   taskBar,
