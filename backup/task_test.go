@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chialab/streamlined-backup/config"
+	"github.com/chialab/streamlined-backup/handler"
 	"github.com/chialab/streamlined-backup/utils"
 )
 
@@ -63,6 +65,53 @@ func (h *testHandler) Handler(chunks <-chan utils.Chunk, now time.Time) (func() 
 	}, nil
 }
 
+func TestNewTasks(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Task{
+		Command: []string{"echo", "foo bar"},
+		Env:     []string{"FOO=bar"},
+		Destination: config.Destination{
+			Type: "s3",
+		},
+	}
+
+	task, err := NewTask("foo", cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if task.name != "foo" {
+		t.Errorf("expected foo, got %s", task.name)
+	}
+	if !reflect.DeepEqual(task.command, []string{"echo", "foo bar"}) {
+		t.Errorf("expected task command 'echo foo bar', got %v", task.command)
+	}
+	if !reflect.DeepEqual(task.env, []string{"FOO=bar"}) {
+		t.Errorf("expected task env 'FOO=bar', got %v", task.env)
+	}
+	if _, ok := task.handler.(*handler.S3Handler); !ok {
+		t.Errorf("expected S3Handler, got %T", task.handler)
+	}
+	if task.logger.Prefix() != "[foo] " {
+		t.Errorf("expected log prefix '[foo] ', got %s", task.logger.Prefix())
+	}
+}
+
+func TestNewTasksError(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Task{
+		Command: []string{"echo", "bar foo"},
+		Env:     []string{"BAR=foo"},
+	}
+
+	if tasks, err := NewTask("bar", cfg); err == nil {
+		t.Fatalf("expected error, got %v", tasks)
+	} else if !errors.Is(err, handler.ErrUnknownDestination) {
+		t.Fatalf("expected ErrUnknownDestination, got %v", err)
+	}
+}
+
 func TestShouldRun(t *testing.T) {
 	t.Parallel()
 
@@ -99,9 +148,9 @@ func TestShouldRun(t *testing.T) {
 				t.Fatalf("unexpected error: %s", err)
 			}
 			handler := &testHandler{lastRun: tc.lastRun}
-			task := &Task{Schedule: *schedule, handler: handler}
+			task := &Task{schedule: *schedule, handler: handler}
 
-			if result, err := task.ShouldRun(now); err != nil {
+			if result, err := task.shouldRun(now); err != nil {
 				t.Errorf("unexpected error: %s", err)
 			} else if result != tc.expected {
 				t.Errorf("expected %t, got %t", tc.expected, result)
@@ -122,10 +171,10 @@ func TestShouldRunError(t *testing.T) {
 	}
 	testErr := errors.New("test error")
 	handler := &testHandler{lastRunErr: testErr}
-	task := &Task{Schedule: *schedule, handler: handler}
+	task := &Task{schedule: *schedule, handler: handler}
 
 	now := time.Date(2021, 10, 6, 19, 10, 38, 0, time.Local)
-	if result, err := task.ShouldRun(now); result != false {
+	if result, err := task.shouldRun(now); result != false {
 		t.Errorf("unexpected result: %t", result)
 	} else if err != testErr {
 		t.Errorf("expected %v, got %v", testErr, err)
@@ -145,9 +194,9 @@ func TestRun(t *testing.T) {
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
 	task := &Task{
-		Command: []string{"bash", "-c", "echo $FOO; pwd; echo logging >&2"},
-		Cwd:     tmpDir,
-		Env:     []string{"FOO=barbaz"},
+		command: []string{"bash", "-c", "echo $FOO; pwd; echo logging >&2"},
+		cwd:     tmpDir,
+		env:     []string{"FOO=barbaz"},
 		handler: handler,
 		logger:  logger,
 	}
@@ -182,7 +231,7 @@ func TestRunLongOutput(t *testing.T) {
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
 	task := &Task{
-		Command: []string{"bash", "-c", fmt.Sprintf("yes | head -c %d", CHUNK_SIZE+extraSize)},
+		command: []string{"bash", "-c", fmt.Sprintf("yes | head -c %d", CHUNK_SIZE+extraSize)},
 		handler: handler,
 		logger:  logger,
 	}
@@ -222,8 +271,8 @@ func TestRunSkipped(t *testing.T) {
 	}
 	logger, lines := newTestLogger()
 	task := &Task{
-		Schedule: *schedule,
-		Command:  []string{"echo", "hello world"},
+		schedule: *schedule,
+		command:  []string{"echo", "hello world"},
 		handler:  handler,
 		logger:   logger,
 	}
@@ -250,7 +299,7 @@ func TestRunHandlerInitError(t *testing.T) {
 	handler := &testHandler{initErr: initErr}
 	logger, lines := newTestLogger()
 	task := &Task{
-		Command: []string{"echo", "hello world"},
+		command: []string{"echo", "hello world"},
 		handler: handler,
 		logger:  logger,
 	}
@@ -278,7 +327,7 @@ func TestRunLastRunError(t *testing.T) {
 	handler := &testHandler{lastRunErr: lastRunErr}
 	logger, lines := newTestLogger()
 	task := &Task{
-		Command: []string{"echo", "hello world"},
+		command: []string{"echo", "hello world"},
 		handler: handler,
 		logger:  logger,
 	}
@@ -305,7 +354,7 @@ func TestRunProcessSpawnError(t *testing.T) {
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
 	task := &Task{
-		Command: []string{"this-cmd-does-not-exist"},
+		command: []string{"this-cmd-does-not-exist"},
 		handler: handler,
 		logger:  logger,
 	}
@@ -336,7 +385,7 @@ func TestRunProcessExecutionError(t *testing.T) {
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
 	task := &Task{
-		Command: []string{"bash", "-c", "echo foo bar; exit 1"},
+		command: []string{"bash", "-c", "echo foo bar; exit 1"},
 		handler: handler,
 		logger:  logger,
 	}
@@ -368,7 +417,7 @@ func TestRunProcessHandlerError(t *testing.T) {
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
 	task := &Task{
-		Command: []string{"bash", "-c", "echo foo bar"},
+		command: []string{"bash", "-c", "echo foo bar"},
 		handler: handler,
 		logger:  logger,
 	}
@@ -403,7 +452,7 @@ func TestRunAbortError(t *testing.T) {
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
 	task := &Task{
-		Command: []string{"bash", "-c", "echo foo bar; exit 1"},
+		command: []string{"bash", "-c", "echo foo bar; exit 1"},
 		handler: handler,
 		logger:  logger,
 	}

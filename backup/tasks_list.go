@@ -1,14 +1,10 @@
 package backup
 
 import (
-	"fmt"
-	"log"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/chialab/streamlined-backup/config"
-	"github.com/chialab/streamlined-backup/handler"
 )
 
 type TasksList []TaskInterface
@@ -16,22 +12,11 @@ type TasksList []TaskInterface
 func NewTasksList(tasks map[string]config.Task) (TasksList, error) {
 	list := TasksList{}
 	for name, taskDfn := range tasks {
-		handler, err := handler.NewHandler(taskDfn.Destination)
-		if err != nil {
+		if task, err := NewTask(name, taskDfn); err != nil {
 			return nil, err
+		} else {
+			list = append(list, task)
 		}
-
-		logger := log.New(os.Stderr, fmt.Sprintf("[%s] ", name), log.LstdFlags|log.Lmsgprefix)
-		task := &Task{
-			Name:     name,
-			Schedule: taskDfn.Schedule,
-			Command:  taskDfn.Command,
-			Cwd:      taskDfn.Cwd,
-			Env:      taskDfn.Env,
-			handler:  handler,
-			logger:   logger,
-		}
-		list = append(list, task)
 	}
 
 	return list, nil

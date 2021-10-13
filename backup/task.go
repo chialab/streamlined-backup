@@ -1,10 +1,14 @@
 package backup
 
 import (
+	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"time"
 
+	"github.com/alessio/shellescape"
+	"github.com/chialab/streamlined-backup/config"
 	"github.com/chialab/streamlined-backup/handler"
 	"github.com/chialab/streamlined-backup/utils"
 	"github.com/hashicorp/go-multierror"
@@ -13,20 +17,58 @@ import (
 const CHUNK_SIZE = 10 << 20
 
 type Task struct {
-	Name     string
-	Schedule utils.ScheduleExpression
-	Command  []string
-	Cwd      string   `toml:"cwd,omitempty"`
-	Env      []string `toml:"env,omitempty"`
+	name     string
+	schedule utils.ScheduleExpression
+	command  []string
+	cwd      string
+	env      []string
 	handler  handler.Handler
 	logger   *log.Logger
+}
+
+func NewTask(name string, def config.Task) (*Task, error) {
+	logger := log.New(os.Stderr, fmt.Sprintf("[%s] ", name), log.LstdFlags|log.Lmsgprefix)
+	handler, err := handler.NewHandler(def.Destination)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Task{
+		name:     name,
+		schedule: def.Schedule,
+		command:  def.Command,
+		cwd:      def.Cwd,
+		env:      def.Env,
+		handler:  handler,
+		logger:   logger,
+	}, nil
 }
 
 type TaskInterface interface {
 	Run(now time.Time) (result Result)
 }
 
-func (t Task) ShouldRun(now time.Time) (bool, error) {
+func (t Task) Name() string {
+	return t.name
+}
+
+func (t Task) CommandString() string {
+	return shellescape.QuoteCommand(t.command)
+}
+
+func (t Task) ActualCwd() string {
+	if t.cwd != "" {
+		return t.cwd
+	}
+
+	if cwd, err := os.Getwd(); err == nil {
+		return cwd
+	} else {
+		return ""
+	}
+}
+
+func (t Task) shouldRun(now time.Time) (bool, error) {
 	lastRun, err := t.handler.LastRun()
 	if err != nil {
 		return false, err
@@ -36,23 +78,32 @@ func (t Task) ShouldRun(now time.Time) (bool, error) {
 		return true, nil
 	}
 
-	return t.Schedule.Next(lastRun).Before(now), nil
+	return t.schedule.Next(lastRun).Before(now), nil
 }
 
-func (t Task) Run(now time.Time) (result Result) {
-	result = Result{Task: &t}
-	if run, err := t.ShouldRun(now); err != nil {
+func (t Task) Run(now time.Time) Result {
+	if run, err := t.shouldRun(now); err != nil {
 		t.logger.Printf("ERROR (Could not find last run): %s", err)
-		result.Status = StatusFailure
-		result.Error = err
 
-		return
+		return Result{
+			Task:   &t,
+			Status: StatusFailure,
+			Error:  err,
+		}
 	} else if !run {
 		t.logger.Print("SKIPPED")
-		result.Status = StatusSkipped
 
-		return
+		return Result{
+			Task:   &t,
+			Status: StatusSkipped,
+		}
 	}
+
+	return t.runner(now)
+}
+
+func (t Task) runner(now time.Time) (result Result) {
+	result = Result{Task: &t}
 
 	logsWriter := utils.NewLogWriter(t.logger)
 	defer func() {
@@ -85,9 +136,9 @@ func (t Task) Run(now time.Time) (result Result) {
 		}
 	}()
 
-	cmd := exec.Command(t.Command[0], t.Command[1:]...)
-	cmd.Dir = t.Cwd
-	cmd.Env = t.Env
+	cmd := exec.Command(t.command[0], t.command[1:]...)
+	cmd.Dir = t.cwd
+	cmd.Env = t.env
 	cmd.Stdout = writer
 	cmd.Stderr = logsWriter
 

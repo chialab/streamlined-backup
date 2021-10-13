@@ -1,11 +1,5 @@
 package backup
 
-import (
-	"os"
-
-	"github.com/alessio/shellescape"
-)
-
 type Status string
 
 const (
@@ -39,27 +33,27 @@ func (r Result) Name() string {
 		return UNKNOWN_TASK
 	}
 
-	return r.Task.Name
+	return r.Task.Name()
 }
 
 func (r Result) Command() string {
-	if r.Task == nil || r.Task.Command == nil {
-		return UNKNOWN_TASK
-	}
-
-	return shellescape.QuoteCommand(r.Task.Command)
-}
-
-func (r Result) ActualCwd() string {
-	if r.Task == nil || r.Task.Cwd == "" {
-		if cwd, err := os.Getwd(); err == nil {
-			return cwd
-		} else {
-			return UNKNOWN_TASK
+	if r.Task != nil {
+		if cmd := r.Task.CommandString(); cmd != "" {
+			return cmd
 		}
 	}
 
-	return r.Task.Cwd
+	return UNKNOWN_TASK
+}
+
+func (r Result) ActualCwd() string {
+	if r.Task != nil {
+		if cwd := r.Task.ActualCwd(); cwd != "" {
+			return cwd
+		}
+	}
+
+	return UNKNOWN_TASK
 }
 
 type Results []Result

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/chialab/streamlined-backup/backup"
+	"github.com/chialab/streamlined-backup/config"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -18,6 +19,15 @@ func TestSlackFormat(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
+	taskFoo, err := backup.NewTask("foo", config.Task{Destination: config.Destination{Type: config.S3Destination}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskBar, err := backup.NewTask("bar", config.Task{Command: []string{"echo", "foo bar"}, Cwd: tmpDir, Destination: config.Destination{Type: config.S3Destination}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	testCases := map[string]struct {
 		input    *backup.Result
 		expected map[string]interface{}
@@ -27,7 +37,7 @@ func TestSlackFormat(t *testing.T) {
 			expected: nil,
 		},
 		"success": {
-			input: &backup.Result{Status: backup.StatusSuccess, Task: &backup.Task{Name: "foo"}},
+			input: &backup.Result{Status: backup.StatusSuccess, Task: taskFoo},
 			expected: map[string]interface{}{
 				"type": "section",
 				"text": map[string]string{
@@ -41,7 +51,7 @@ func TestSlackFormat(t *testing.T) {
 				Status: backup.StatusFailure,
 				Error:  fmt.Errorf("test error"),
 				Logs:   []string{"test log 1", "test log 2", ""},
-				Task:   &backup.Task{Name: "bar", Command: []string{"echo", "foo bar"}, Cwd: tmpDir},
+				Task:   taskBar,
 			},
 			expected: map[string]interface{}{
 				"type": "section",
@@ -83,9 +93,13 @@ func TestSlackFormat(t *testing.T) {
 func TestSlackNotify(t *testing.T) {
 	t.Parallel()
 
+	task, err := backup.NewTask("foo", config.Task{Destination: config.Destination{Type: config.S3Destination}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	results := []backup.Result{
 		{Status: backup.StatusSkipped},
-		{Status: backup.StatusSuccess, Task: &backup.Task{Name: "foo"}},
+		{Status: backup.StatusSuccess, Task: task},
 	}
 	expectedBody := fmt.Sprintf(
 		`{"blocks":[{"text":{"text":":white_check_mark: Backup task %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",
@@ -188,9 +202,13 @@ func TestSlackNotifyEmpty(t *testing.T) {
 func TestSlackNotifyError(t *testing.T) {
 	t.Parallel()
 
+	task, err := backup.NewTask("foo", config.Task{Destination: config.Destination{Type: config.S3Destination}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	results := []backup.Result{
 		{Status: backup.StatusSkipped},
-		{Status: backup.StatusSuccess, Task: &backup.Task{Name: "foo"}},
+		{Status: backup.StatusSuccess, Task: task},
 	}
 	expectedBody := fmt.Sprintf(
 		`{"blocks":[{"text":{"text":":white_check_mark: Backup task %s completed successfully.","type":"mrkdwn"},"type":"section"}]}`+"\n",

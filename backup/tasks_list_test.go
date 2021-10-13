@@ -91,14 +91,14 @@ func TestNewTasksList(t *testing.T) {
 			t.Fatalf("expected Task, got %T", taskIf)
 		}
 
-		names = append(names, task.Name)
-		switch task.Name {
+		names = append(names, task.name)
+		switch task.name {
 		case "foo":
-			if !reflect.DeepEqual(task.Command, []string{"echo", "foo bar"}) {
-				t.Errorf("expected task command 'echo foo bar', got %v", task.Command)
+			if !reflect.DeepEqual(task.command, []string{"echo", "foo bar"}) {
+				t.Errorf("expected task command 'echo foo bar', got %v", task.command)
 			}
-			if !reflect.DeepEqual(task.Env, []string{"FOO=bar"}) {
-				t.Errorf("expected task env 'FOO=bar', got %v", task.Env)
+			if !reflect.DeepEqual(task.env, []string{"FOO=bar"}) {
+				t.Errorf("expected task env 'FOO=bar', got %v", task.env)
 			}
 			if _, ok := task.handler.(*handler.S3Handler); !ok {
 				t.Errorf("expected S3Handler, got %T", task.handler)
@@ -107,11 +107,11 @@ func TestNewTasksList(t *testing.T) {
 				t.Errorf("expected log prefix '[foo] ', got %s", task.logger.Prefix())
 			}
 		case "bar":
-			if !reflect.DeepEqual(task.Command, []string{"echo", "bar foo"}) {
-				t.Errorf("expected task command 'echo bar foo', got %v", task.Command)
+			if !reflect.DeepEqual(task.command, []string{"echo", "bar foo"}) {
+				t.Errorf("expected task command 'echo bar foo', got %v", task.command)
 			}
-			if !reflect.DeepEqual(task.Env, []string{"BAR=foo"}) {
-				t.Errorf("expected task env 'BAR=foo', got %v", task.Env)
+			if !reflect.DeepEqual(task.env, []string{"BAR=foo"}) {
+				t.Errorf("expected task env 'BAR=foo', got %v", task.env)
 			}
 			if _, ok := task.handler.(*handler.S3Handler); !ok {
 				t.Errorf("expected S3Handler, got %T", task.handler)
