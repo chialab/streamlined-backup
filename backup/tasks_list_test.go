@@ -2,8 +2,10 @@ package backup
 
 import (
 	"errors"
+	"math"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,12 +13,44 @@ import (
 	"github.com/chialab/streamlined-backup/handler"
 )
 
+func newConcurrenceCounter() *concurrenceCounter {
+	return &concurrenceCounter{
+		mutex: &sync.Mutex{},
+		ch:    make(chan bool, math.MaxInt16),
+	}
+}
+
+type concurrenceCounter struct {
+	max   uint
+	mutex *sync.Mutex
+	ch    chan bool
+}
+
+func (c *concurrenceCounter) Start() {
+	c.ch <- true
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if current := uint(len(c.ch)); current > c.max {
+		c.max = current
+	}
+}
+func (c *concurrenceCounter) Done() {
+	<-c.ch
+}
+func (c concurrenceCounter) Max() uint {
+	return c.max
+}
+
 type testTask struct {
-	result Result
-	delay  time.Duration
+	result      Result
+	delay       time.Duration
+	concurrence *concurrenceCounter
 }
 
 func (t testTask) Run(now time.Time) Result {
+	t.concurrence.Start()
+	defer t.concurrence.Done()
 	time.Sleep(t.delay)
 
 	return t.result
@@ -121,42 +155,55 @@ func TestNewTasksListError(t *testing.T) {
 func TestRunTasks(t *testing.T) {
 	t.Parallel()
 
+	meter := newConcurrenceCounter()
 	tasks := TasksList{
 		testTask{
-			result: Result{Status: StatusSuccess, Logs: []string{"fourth to complete"}},
-			delay:  time.Millisecond * 80,
+			result:      Result{Status: StatusSuccess, Logs: []string{"success"}},
+			delay:       time.Millisecond * 10,
+			concurrence: meter,
 		},
 		testTask{
-			result: Result{Status: StatusSuccess, Logs: []string{"first to complete"}},
-			delay:  time.Millisecond * 30,
+			result:      Result{Status: StatusSkipped, Logs: []string{"skipped"}},
+			delay:       time.Millisecond * 10,
+			concurrence: meter,
 		},
 		testTask{
-			result: Result{Status: StatusSkipped, Logs: []string{"second to complete"}},
-			delay:  time.Millisecond * 20,
+			result:      Result{Status: StatusFailure, Logs: []string{"failed"}},
+			delay:       time.Millisecond * 10,
+			concurrence: meter,
 		},
 		testTask{
-			result: Result{Status: StatusFailure, Logs: []string{"third to complete"}},
-			delay:  time.Millisecond * 10,
+			result:      Result{Status: StatusSuccess, Logs: []string{"success"}},
+			delay:       time.Millisecond * 10,
+			concurrence: meter,
 		},
 		testTask{
-			result: Result{Status: StatusFailure, Logs: []string{"sixth to complete"}},
-			delay:  time.Millisecond * 50,
+			result:      Result{Status: StatusSuccess, Logs: []string{"success"}},
+			delay:       time.Millisecond * 10,
+			concurrence: meter,
 		},
 		testTask{
-			result: Result{Status: StatusSuccess, Logs: []string{"fifth to complete"}},
-			delay:  time.Millisecond * 20,
+			result:      Result{Status: StatusFailure, Logs: []string{"failed"}},
+			delay:       time.Millisecond * 10,
+			concurrence: meter,
 		},
 	}
 	results := tasks.Run(time.Now(), 2)
-	expected := Results{
-		Result{Status: StatusSuccess, Logs: []string{"first to complete"}},
-		Result{Status: StatusSkipped, Logs: []string{"second to complete"}},
-		Result{Status: StatusFailure, Logs: []string{"third to complete"}},
-		Result{Status: StatusSuccess, Logs: []string{"fourth to complete"}},
-		Result{Status: StatusSuccess, Logs: []string{"fifth to complete"}},
-		Result{Status: StatusFailure, Logs: []string{"sixth to complete"}},
+	if max := meter.Max(); max != 2 {
+		t.Errorf("expected 2 concurrent tasks, got %d", max)
 	}
-	if !reflect.DeepEqual(results, expected) {
-		t.Errorf("Expected %v, got %v", expected, results)
+
+	count := map[Status]int{}
+	for _, result := range results {
+		count[result.Status]++
+	}
+	if count[StatusSuccess] != 3 {
+		t.Errorf("expected 3 success tasks, got %d", count[StatusSuccess])
+	}
+	if count[StatusFailure] != 2 {
+		t.Errorf("expected 2 failed tasks, got %d", count[StatusFailure])
+	}
+	if count[StatusSkipped] != 1 {
+		t.Errorf("expected 1 skipped task, got %d", count[StatusSkipped])
 	}
 }
