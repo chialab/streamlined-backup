@@ -152,9 +152,12 @@ func TestRun(t *testing.T) {
 		logger:  logger,
 	}
 	expectedData := fmt.Sprintf("barbaz\n%s\n", tmpDir)
+	expectedResultLogs := []string{"logging"}
 
 	if res := task.Run(time.Now()); res.Status != StatusSuccess {
 		t.Errorf("unexpected error: %+v", res)
+	} else if !reflect.DeepEqual(res.Logs, expectedResultLogs) {
+		t.Errorf("expected %q, got %q", expectedResultLogs, res.Logs)
 	}
 	if len(handler.chunks) != 1 {
 		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
