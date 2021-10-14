@@ -141,7 +141,7 @@ func (t Task) runner(now time.Time) (result Result) {
 			panicErr := utils.ToError(panicked)
 
 			result.status = StatusFailed
-			if taskErr, ok := panicked.(*TaskError); ok && taskErr.Code() == CommandTimeoutError {
+			if IsTaskError(panicErr, CommandTimeoutError) {
 				result.status = StatusTimeout
 			}
 
@@ -212,6 +212,8 @@ func (t Task) execCommand(stdout io.Writer, stderr io.Writer) error {
 		if killErr := cmd.Process.Kill(); killErr != nil {
 			t.logger.Printf("ERROR (Command kill): %s", killErr)
 			err = multierror.Append(err, NewTaskError(CommandKillError, "command could not be killed: %s", killErr))
+		} else if waitErr := <-res; waitErr != nil {
+			err = multierror.Append(err, waitErr)
 		}
 
 		return err

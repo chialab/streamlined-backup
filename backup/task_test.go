@@ -15,7 +15,6 @@ import (
 	"github.com/chialab/streamlined-backup/config"
 	"github.com/chialab/streamlined-backup/handler"
 	"github.com/chialab/streamlined-backup/utils"
-	"github.com/hashicorp/go-multierror"
 )
 
 func newTestLogger() (*log.Logger, func() []string) {
@@ -518,32 +517,9 @@ func TestTaskRunner(t *testing.T) {
 					t.Errorf("unexpected error, got %+v", result.Error())
 				}
 			default:
-				checkErr := func(code ErrorCode, errors ...*TaskError) bool {
-					for _, err := range errors {
-						if err.Code() == code {
-							return true
-						}
-					}
-
-					return false
-				}
-
-				taskErrors := []*TaskError{}
-				if err, ok := result.Error().(*TaskError); ok {
-					taskErrors = append(taskErrors, err)
-				} else if merr, ok := result.Error().(*multierror.Error); ok {
-					for _, err := range merr.Errors {
-						if err, ok := err.(*TaskError); ok {
-							taskErrors = append(taskErrors, err)
-						}
-					}
-				} else if err := new(TaskError); errors.As(result.Error(), &err) {
-					taskErrors = append(taskErrors, err)
-				}
-
-				for _, errCode := range tc.errCodes {
-					if !checkErr(errCode, taskErrors...) {
-						t.Errorf("expected error code %+v, got %+v", errCode, taskErrors)
+				for _, code := range tc.errCodes {
+					if err := result.Error(); !IsTaskError(err, code) {
+						t.Errorf("expected error code %+v, got %+v", code, err)
 					}
 				}
 			}
@@ -567,41 +543,40 @@ func TestTaskExecCommand(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
-		command []string
-		errCode *ErrorCode
-		logs    []string
-		stdout  string
-		stderr  string
+		command  []string
+		errCodes []ErrorCode
+		logs     []string
+		stdout   string
+		stderr   string
 	}
-	errCode := func(code ErrorCode) *ErrorCode { return &code }
 	testCases := map[string]testCase{
 		"ok": {
-			command: []string{"echo", "foo bar"},
-			errCode: nil,
-			logs:    []string{},
-			stdout:  "foo bar\n",
-			stderr:  "",
+			command:  []string{"echo", "foo bar"},
+			errCodes: nil,
+			logs:     []string{},
+			stdout:   "foo bar\n",
+			stderr:   "",
 		},
 		"start_error": {
-			command: []string{"this-cmd-does-not-exist"},
-			errCode: errCode(CommandStartError),
-			logs:    []string{"ERROR (Command start): exec: \"this-cmd-does-not-exist\": executable file not found in $PATH"},
-			stdout:  "",
-			stderr:  "",
+			command:  []string{"this-cmd-does-not-exist"},
+			errCodes: []ErrorCode{CommandStartError},
+			logs:     []string{"ERROR (Command start): exec: \"this-cmd-does-not-exist\": executable file not found in $PATH"},
+			stdout:   "",
+			stderr:   "",
 		},
 		"non_zero_exit_code": {
-			command: []string{"bash", "-c", "echo output && echo error >&2 && exit 42"},
-			errCode: errCode(CommandFailedError),
-			logs:    []string{"ERROR (Command failed): exit status 42"},
-			stdout:  "output\n",
-			stderr:  "error\n",
+			command:  []string{"bash", "-c", "echo output && echo error >&2 && exit 42"},
+			errCodes: []ErrorCode{CommandFailedError},
+			logs:     []string{"ERROR (Command failed): exit status 42"},
+			stdout:   "output\n",
+			stderr:   "error\n",
 		},
 		"timeout": {
-			command: []string{"bash", "-c", "sleep 1 && echo output && echo error >&2 && exit 42"},
-			errCode: errCode(CommandTimeoutError),
-			logs:    []string{"TIMEOUT (Command took more than 30ms)"},
-			stdout:  "",
-			stderr:  "",
+			command:  []string{"bash", "-c", "sleep 1 && echo output && echo error >&2 && exit 42"},
+			errCodes: []ErrorCode{CommandTimeoutError},
+			logs:     []string{"TIMEOUT (Command took more than 30ms)"},
+			stdout:   "",
+			stderr:   "",
 		},
 	}
 	for name, tc := range testCases {
@@ -614,14 +589,19 @@ func TestTaskExecCommand(t *testing.T) {
 			}
 			stdout := bytes.NewBuffer(nil)
 			stderr := bytes.NewBuffer(nil)
-			err := task.execCommand(stdout, stderr)
-			if tc.errCode == nil && err != nil {
-				t.Errorf("unexpected error: %s", err)
-			} else if tc.errCode != nil && err == nil {
-				t.Errorf("expected error, got nil")
-			} else if taskErr, ok := err.(*TaskError); err != nil && (!ok || taskErr.Code() != *tc.errCode) {
-				t.Errorf("expected error %+v, got %+v", tc.errCode, err)
+
+			if err := task.execCommand(stdout, stderr); tc.errCodes == nil {
+				if err != nil {
+					t.Errorf("unexpected error, got %+v", err)
+				}
+			} else {
+				for _, code := range tc.errCodes {
+					if !IsTaskError(err, code) {
+						t.Errorf("expected error code %+v, got %+v", code, err)
+					}
+				}
 			}
+
 			if logs := lines(); !reflect.DeepEqual(logs, tc.logs) {
 				t.Errorf("expected logs %q, got %q", tc.logs, logs)
 			}
