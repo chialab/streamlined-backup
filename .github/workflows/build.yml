@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  push:
+    tags: [ v* ]
+
+jobs:
+  build:
+    name: Build and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.17
+
+      - name: Build
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o build/streamlined-backup-linux-amd64 -v ./...
+          GOOS=linux GOARCH=arm64 go build -o build/streamlined-backup-linux-arm64 -v ./...
+          GOOS=darwin GOARCH=amd64 go build -o build/streamlined-backup-darwin-amd64 -v ./...
+          GOOS=darwin GOARCH=arm64 go build -o build/streamlined-backup-darwin-arm64 -v ./...
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          files: |
+            build/streamlined-backup-linux-amd64
+            build/streamlined-backup-linux-arm64
+            build/streamlined-backup-darwin-amd64
+            build/streamlined-backup-darwin-arm64
