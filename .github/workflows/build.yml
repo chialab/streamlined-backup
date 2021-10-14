@@ -21,10 +21,10 @@ jobs:
 
       - name: Build
         run: |
-          GOOS=linux GOARCH=amd64 go build -o build/streamlined-backup-linux-amd64 -v ./...
-          GOOS=linux GOARCH=arm64 go build -o build/streamlined-backup-linux-arm64 -v ./...
-          GOOS=darwin GOARCH=amd64 go build -o build/streamlined-backup-darwin-amd64 -v ./...
-          GOOS=darwin GOARCH=arm64 go build -o build/streamlined-backup-darwin-arm64 -v ./...
+          GOOS=linux GOARCH=amd64 go build -o build/streamlined-backup-linux-amd64 -v main.go
+          GOOS=linux GOARCH=arm64 go build -o build/streamlined-backup-linux-arm64 -v main.go
+          GOOS=darwin GOARCH=amd64 go build -o build/streamlined-backup-darwin-amd64 -v main.go
+          GOOS=darwin GOARCH=arm64 go build -o build/streamlined-backup-darwin-arm64 -v main.go
 
       - name: Release
         uses: softprops/action-gh-release@v1
