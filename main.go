@@ -57,7 +57,9 @@ func main() {
 	}
 
 	pid := utils.NewPidFile(*pidFilePath)
-	if err := pid.Acquire(); err != nil {
+	if err := pid.Acquire(); err == utils.ErrPidFileExists {
+		return
+	} else if err != nil {
 		panic(err)
 	}
 	defer pid.MustRelease()
