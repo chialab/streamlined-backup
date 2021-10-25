@@ -1,22 +1,165 @@
 package config
 
 import (
+	"fmt"
+	"os"
+	"path"
 	"testing"
 	"time"
 )
 
-func TestClient(t *testing.T) {
-	t.Parallel()
+var (
+	testAwsProfile         = "streamlined-backup-test"
+	testAwsAccessKeyId     = "AKIAIOSFODNN7EXAMPLE"
+	testAwsSecretAccessKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+	testAwsSessionToken    = "session-token"
+)
 
-	dest := &S3DestinationDefinition{
-		Bucket: "example-bucket",
-		Region: "eu-south-1",
-	}
-	if client := dest.Client(); client == nil {
-		t.Error("expected client to be created")
-	} else if *client.Config.Region != dest.Region {
-		t.Errorf("expected region %s, got %s", dest.Region, *client.Config.Region)
-	}
+func TestClient(t *testing.T) {
+	t.Run("static_credentials", func(t *testing.T) {
+		t.Parallel()
+
+		dest := &S3DestinationDefinition{
+			Bucket: "example-bucket",
+			Region: "eu-south-1",
+			Credentials: &S3Credentials{
+				AccessKeyId:     testAwsAccessKeyId,
+				SecretAccessKey: testAwsSecretAccessKey,
+				SessionToken:    testAwsSessionToken,
+			},
+		}
+
+		client := dest.Client()
+		if client == nil {
+			t.Fatalf("expected client to be created")
+		}
+		if *client.Config.Region != dest.Region {
+			t.Errorf("expected region %s, got %s", dest.Region, *client.Config.Region)
+		}
+
+		credentials, err := client.Config.Credentials.Get()
+		if err != nil {
+			t.Fatalf("expected credentials to be set, got %s", err)
+		}
+		if credentials.AccessKeyID != testAwsAccessKeyId {
+			t.Errorf("expected access key id %s, got %s", testAwsAccessKeyId, credentials.AccessKeyID)
+		}
+		if credentials.SecretAccessKey != testAwsSecretAccessKey {
+			t.Errorf("expected secret access key %s, got %s", testAwsSecretAccessKey, credentials.SecretAccessKey)
+		}
+		if credentials.SessionToken != testAwsSessionToken {
+			t.Errorf("expected session token %s, got %s", testAwsSessionToken, credentials.SessionToken)
+		}
+	})
+
+	t.Run("profile", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tmpFile := path.Join(tmpDir, "/credentials")
+		data := fmt.Sprintf("[%s]\naws_access_key_id = %s\naws_secret_access_key = %s\n", testAwsProfile, testAwsAccessKeyId, testAwsSecretAccessKey)
+		if err := os.WriteFile(tmpFile, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("AWS_SHARED_CREDENTIALS_FILE", tmpFile)
+
+		dest := &S3DestinationDefinition{
+			Bucket:  "example-bucket",
+			Region:  "eu-west-1",
+			Profile: &testAwsProfile,
+		}
+
+		client := dest.Client()
+		if client == nil {
+			t.Fatalf("expected client to be created")
+		}
+		if *client.Config.Region != dest.Region {
+			t.Errorf("expected region %s, got %s", dest.Region, *client.Config.Region)
+		}
+
+		credentials, err := client.Config.Credentials.Get()
+		if err != nil {
+			t.Fatalf("expected credentials to be set, got %s", err)
+		}
+		if credentials.AccessKeyID != testAwsAccessKeyId {
+			t.Errorf("expected access key id %s, got %s", testAwsAccessKeyId, credentials.AccessKeyID)
+		}
+		if credentials.SecretAccessKey != testAwsSecretAccessKey {
+			t.Errorf("expected secret access key %s, got %s", testAwsSecretAccessKey, credentials.SecretAccessKey)
+		}
+		if credentials.SessionToken != "" {
+			t.Errorf("expected session token %s, got %s", "", credentials.SessionToken)
+		}
+	})
+
+	t.Run("default_env", func(t *testing.T) {
+		t.Setenv("AWS_ACCESS_KEY_ID", testAwsAccessKeyId)
+		t.Setenv("AWS_SECRET_ACCESS_KEY", testAwsSecretAccessKey)
+		t.Setenv("AWS_SESSION_TOKEN", testAwsSessionToken)
+
+		dest := &S3DestinationDefinition{
+			Bucket: "example-bucket",
+			Region: "eu-south-1",
+		}
+
+		client := dest.Client()
+		if client == nil {
+			t.Fatalf("expected client to be created")
+		}
+		if *client.Config.Region != dest.Region {
+			t.Errorf("expected region %s, got %s", dest.Region, *client.Config.Region)
+		}
+
+		credentials, err := client.Config.Credentials.Get()
+		if err != nil {
+			t.Fatalf("expected credentials to be set, got %s", err)
+		}
+		if credentials.AccessKeyID != testAwsAccessKeyId {
+			t.Errorf("expected access key id %s, got %s", testAwsAccessKeyId, credentials.AccessKeyID)
+		}
+		if credentials.SecretAccessKey != testAwsSecretAccessKey {
+			t.Errorf("expected secret access key %s, got %s", testAwsSecretAccessKey, credentials.SecretAccessKey)
+		}
+		if credentials.SessionToken != testAwsSessionToken {
+			t.Errorf("expected session token %s, got %s", testAwsSessionToken, credentials.SessionToken)
+		}
+	})
+
+	t.Run("default_shared", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tmpFile := path.Join(tmpDir, "/credentials")
+		data := fmt.Sprintf("[%s]\naws_access_key_id = %s\naws_secret_access_key = %s\n", testAwsProfile, testAwsAccessKeyId, testAwsSecretAccessKey)
+		if err := os.WriteFile(tmpFile, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("AWS_SHARED_CREDENTIALS_FILE", tmpFile)
+		t.Setenv("AWS_PROFILE", testAwsProfile)
+
+		dest := &S3DestinationDefinition{
+			Bucket: "example-bucket",
+			Region: "eu-south-1",
+		}
+
+		client := dest.Client()
+		if client == nil {
+			t.Fatalf("expected client to be created")
+		}
+		if *client.Config.Region != dest.Region {
+			t.Errorf("expected region %s, got %s", dest.Region, *client.Config.Region)
+		}
+
+		credentials, err := client.Config.Credentials.Get()
+		if err != nil {
+			t.Fatalf("expected credentials to be set, got %s", err)
+		}
+		if credentials.AccessKeyID != testAwsAccessKeyId {
+			t.Errorf("expected access key id %s, got %s", testAwsAccessKeyId, credentials.AccessKeyID)
+		}
+		if credentials.SecretAccessKey != testAwsSecretAccessKey {
+			t.Errorf("expected secret access key %s, got %s", testAwsSecretAccessKey, credentials.SecretAccessKey)
+		}
+		if credentials.SessionToken != "" {
+			t.Errorf("expected session token %s, got %s", "", credentials.SessionToken)
+		}
+	})
 }
 
 func TestKey(t *testing.T) {

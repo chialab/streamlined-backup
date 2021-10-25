@@ -7,6 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
@@ -20,22 +21,42 @@ const (
 )
 
 type Destination struct {
-	Type DestinationType
-	S3   S3DestinationDefinition
+	Type DestinationType         `json:"type" toml:"type"`
+	S3   S3DestinationDefinition `json:"s3" toml:"s3"`
 }
 
 type S3DestinationDefinition struct {
-	Bucket string
-	Prefix string
-	Suffix string
-	Region string
+	Bucket      string         `json:"bucket" toml:"bucket"`
+	Prefix      string         `json:"prefix" toml:"prefix"`
+	Suffix      string         `json:"suffix" toml:"suffix"`
+	Region      string         `json:"region" toml:"region"`
+	Credentials *S3Credentials `json:"credentials" toml:"credentials"`
+	Profile     *string        `json:"profile" toml:"profile"`
+}
+
+type S3Credentials struct {
+	AccessKeyId     string `json:"access_key_id" toml:"access_key_id"`
+	SecretAccessKey string `json:"secret_access_key" toml:"secret_access_key"`
+	SessionToken    string `json:"session_token,omitempty" toml:"session_token,omitempty"`
+}
+
+func (d S3DestinationDefinition) credentials() *credentials.Credentials {
+	if d.Credentials != nil {
+		return credentials.NewStaticCredentials(d.Credentials.AccessKeyId, d.Credentials.SecretAccessKey, d.Credentials.SessionToken)
+	} else if d.Profile != nil {
+		return credentials.NewSharedCredentials("", *d.Profile)
+	}
+
+	return nil
 }
 
 func (d S3DestinationDefinition) Client() *s3.S3 {
-	session := session.Must(session.NewSession())
+	session := session.Must(session.NewSession(&aws.Config{
+		Region:      aws.String(d.Region),
+		Credentials: d.credentials(),
+	}))
 	client := s3.New(session, &aws.Config{
 		Retryer: &client.DefaultRetryer{NumMaxRetries: 3},
-		Region:  aws.String(d.Region),
 	})
 
 	return client
