@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path"
 	"testing"
 	"time"
 )
@@ -53,7 +54,7 @@ func TestClient(t *testing.T) {
 
 	t.Run("profile", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		tmpFile := tmpDir + "/credentials"
+		tmpFile := path.Join(tmpDir, "/credentials")
 		data := fmt.Sprintf("[%s]\naws_access_key_id = %s\naws_secret_access_key = %s\n", testAwsProfile, testAwsAccessKeyId, testAwsSecretAccessKey)
 		if err := os.WriteFile(tmpFile, []byte(data), 0600); err != nil {
 			t.Fatal(err)
@@ -124,7 +125,7 @@ func TestClient(t *testing.T) {
 
 	t.Run("default_shared", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		tmpFile := tmpDir + "/credentials"
+		tmpFile := path.Join(tmpDir, "/credentials")
 		data := fmt.Sprintf("[%s]\naws_access_key_id = %s\naws_secret_access_key = %s\n", testAwsProfile, testAwsAccessKeyId, testAwsSecretAccessKey)
 		if err := os.WriteFile(tmpFile, []byte(data), 0600); err != nil {
 			t.Fatal(err)
