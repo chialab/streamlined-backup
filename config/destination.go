@@ -21,21 +21,23 @@ const (
 )
 
 type Destination struct {
-	Type DestinationType
-	S3   S3DestinationDefinition
+	Type DestinationType         `json:"type" toml:"type"`
+	S3   S3DestinationDefinition `json:"s3" toml:"s3"`
 }
 
 type S3DestinationDefinition struct {
-	Bucket      string
-	Prefix      string
-	Suffix      string
-	Region      string
-	Credentials *struct {
-		AccessKeyId     string
-		SecretAccessKey string
-		SessionToken    string
-	}
-	Profile *string
+	Bucket      string         `json:"bucket" toml:"bucket"`
+	Prefix      string         `json:"prefix" toml:"prefix"`
+	Suffix      string         `json:"suffix" toml:"suffix"`
+	Region      string         `json:"region" toml:"region"`
+	Credentials *S3Credentials `json:"credentials" toml:"credentials"`
+	Profile     *string        `json:"profile" toml:"profile"`
+}
+
+type S3Credentials struct {
+	AccessKeyId     string `json:"access_key_id" toml:"access_key_id"`
+	SecretAccessKey string `json:"secret_access_key" toml:"secret_access_key"`
+	SessionToken    string `json:"session_token,omitempty" toml:"session_token,omitempty"`
 }
 
 func (d S3DestinationDefinition) credentials() *credentials.Credentials {

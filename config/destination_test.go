@@ -21,11 +21,7 @@ func TestClient(t *testing.T) {
 		dest := &S3DestinationDefinition{
 			Bucket: "example-bucket",
 			Region: "eu-south-1",
-			Credentials: &struct {
-				AccessKeyId     string
-				SecretAccessKey string
-				SessionToken    string
-			}{
+			Credentials: &S3Credentials{
 				AccessKeyId:     testAwsAccessKeyId,
 				SecretAccessKey: testAwsSecretAccessKey,
 				SessionToken:    testAwsSessionToken,

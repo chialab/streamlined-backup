@@ -6,12 +6,12 @@ import (
 )
 
 type Task struct {
-	Schedule    utils.ScheduleExpression
-	Command     []string
-	Cwd         string
-	Env         []string
-	Timeout     string
-	Destination Destination
+	Schedule    utils.ScheduleExpression `json:"schedule" toml:"schedule"`
+	Command     []string                 `json:"command" toml:"command"`
+	Cwd         string                   `json:"cwd" toml:"cwd"`
+	Env         []string                 `json:"env" toml:"env"`
+	Timeout     string                   `json:"timeout" toml:"timeout"`
+	Destination Destination              `json:"destination" toml:"destination"`
 }
 
 func LoadConfiguration(path string) (map[string]Task, error) {
