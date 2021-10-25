@@ -29,7 +29,8 @@ func (list *listOfStrings) String() string {
 func main() {
 	var slackWebhooks listOfStrings
 	flag.Var(&slackWebhooks, "slack-webhook", "Slack webhook URL (can be specified multiple times).")
-	cfgFilePath := flag.String("config", "", "Path to configuration file (TOML).")
+	cfgFilePath := flag.String("config", "", "Path to configuration file (TOML/JSON).")
+	pidFilePath := flag.String("pid", "/var/run/streamlined-backup.pid", "Path to PID file.")
 	parallel := flag.Uint("parallel", PARALLEL_TASKS, "Number of tasks to run in parallel.")
 	flag.Parse()
 
@@ -54,6 +55,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	pid := utils.NewPidFile(*pidFilePath)
+	if err := pid.Acquire(); err == utils.ErrPidFileExists {
+		return
+	} else if err != nil {
+		panic(err)
+	}
+	defer pid.MustRelease()
 
 	now := time.Now()
 	results := tasks.Run(now, *parallel)
