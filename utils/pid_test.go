@@ -62,7 +62,7 @@ func TestPidAcquireRunning(t *testing.T) {
 	tmpDir := t.TempDir()
 	pidFile := path.Join(tmpDir, "file.pid")
 
-	cmd := exec.Command("yes")
+	cmd := exec.Command("tail", "-f", "/dev/null")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("unexpected error: %#v", err)
 	}
@@ -174,7 +174,7 @@ func TestPidReleasePidChanged(t *testing.T) {
 		t.Errorf("expected file to be created, got %#v", err)
 	}
 
-	cmd := exec.Command("yes")
+	cmd := exec.Command("tail", "-f", "/dev/null")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("unexpected error: %#v", err)
 	}
