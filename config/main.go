@@ -1,9 +1,16 @@
 package config
 
 import (
+	"encoding/json"
+	"errors"
+	"os"
+	"strings"
+
 	"github.com/BurntSushi/toml"
 	"github.com/chialab/streamlined-backup/utils"
 )
+
+var ErrUnsupportedConfigFile = errors.New("unsupported config file")
 
 type Task struct {
 	Schedule    utils.ScheduleExpression `json:"schedule" toml:"schedule"`
@@ -16,9 +23,21 @@ type Task struct {
 
 func LoadConfiguration(path string) (map[string]Task, error) {
 	var config map[string]Task
-	if _, err := toml.DecodeFile(path, &config); err != nil {
-		return nil, err
+	switch {
+	case strings.HasSuffix(path, ".toml"):
+		if _, err := toml.DecodeFile(path, &config); err != nil {
+			return nil, err
+		}
+		return config, nil
+	case strings.HasSuffix(path, ".json"):
+		if data, err := os.ReadFile(path); err != nil {
+			return nil, err
+		} else if err := json.Unmarshal(data, &config); err != nil {
+			return nil, err
+		}
+
+		return config, nil
 	}
 
-	return config, nil
+	return nil, ErrUnsupportedConfigFile
 }
