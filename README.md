@@ -17,8 +17,10 @@ when the backup is complete, or when it fails.
 Example configuration
 ---------------------
 
-Configuration is in TOML format. The binary expects path to configuration file
-to be passed using the `--config` command line argument.
+Configuration can be either in JSON or TOML format. The binary expects path to
+configuration file to be passed using the `--config` command line argument.
+
+The followind example uses TOML:
 
 ```toml
 [backup_mysql_database]
@@ -43,7 +45,7 @@ command = ["tar", "-cvjf-", "/path/to/files"]
         bucket = "example-bucket"
         prefix = "my_tar_archive/daily/"
         suffix = "-my_tar_archive.tar.bz2"
-        [my_tar_archive.destination.s3.credentials]
+            [my_tar_archive.destination.s3.credentials]
             access_key_id = "AKIAIOSFODNN7EXAMPLE"
             secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 ```
