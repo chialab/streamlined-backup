@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"bytes"
+	"crypto/md5"
+	"encoding/base64"
 	"errors"
+	"io"
 	"sort"
 	"strings"
 	"sync"
@@ -14,7 +18,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/chialab/streamlined-backup/config"
-	"github.com/chialab/streamlined-backup/utils"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -41,6 +44,15 @@ func TestS3UploadedParts(t *testing.T) {
 	} else if parts[2].PartNumber != int64(100) {
 		t.Errorf("expected part 2 to be 100, got %d", parts[2].PartNumber)
 	}
+}
+
+func padPart(data []byte) []byte {
+	res := make([]byte, s3ChunkMinSize)
+	copy(res, data)
+	res[len(data)] = '\n'
+	res[s3ChunkMinSize-1] = byte(0)
+
+	return res
 }
 
 type mockedClientS3Upload struct {
@@ -87,13 +99,21 @@ func (c *mockedClientS3Upload) UploadPart(input *s3.UploadPartInput) (*s3.Upload
 	} else if size != int(*input.ContentLength) {
 		return nil, errors.New("unexpected read size")
 	}
-	if string(body) == "error" {
+
+	hash := md5.New()
+	hash.Write(body)
+	etag := base64.StdEncoding.EncodeToString(hash.Sum(nil))
+	var bodyStr string
+	if pos := bytes.IndexRune(body, '\n'); pos != -1 {
+		bodyStr = string(body[:pos])
+		etag = bodyStr
+	}
+	if bodyStr == "error" {
 		return nil, errors.New("test error")
-	} else if sleep, err := time.ParseDuration(string(body)); err == nil {
+	} else if sleep, err := time.ParseDuration(bodyStr); err == nil {
 		time.Sleep(sleep)
 	}
 
-	etag := string(body)
 	part := &s3UploadedPart{
 		PartNumber: *input.PartNumber,
 		ETag:       etag,
@@ -168,16 +188,22 @@ func TestS3Handler(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan utils.Chunk)
+	reader, writer := io.Pipe()
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
-	wait, initErr := handler.Handler(chunks, now)
+	wait, initErr := handler.Handler(reader, now)
 	if initErr != nil {
 		t.Fatalf("unexpected error: %s", initErr)
 	}
-	chunks <- utils.Chunk{Data: []byte("10ms")}
-	chunks <- utils.Chunk{Data: []byte("5ms")}
-	chunks <- utils.Chunk{Data: []byte("1ms")}
-	close(chunks)
+	for _, str := range []string{"10ms", "5ms", "1ms"} {
+		if bytes, err := writer.Write(padPart([]byte(str))); err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		} else if bytes < s3ChunkMinSize {
+			t.Errorf("expected at least %d written bytes, got %d", s3ChunkMinSize, bytes)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
 
 	if err := wait(); err != nil {
 		t.Fatalf("unexpected error: %s", err)
@@ -215,10 +241,9 @@ func TestS3HandlerInitError(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan utils.Chunk)
+	reader, _ := io.Pipe()
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
-
-	if wait, initErr := handler.Handler(chunks, now); initErr == nil {
+	if wait, initErr := handler.Handler(reader, now); initErr == nil {
 		t.Error("expected error, got nil")
 	} else if wait != nil {
 		t.Error("expected nil wait, got non-nil")
@@ -250,16 +275,22 @@ func TestS3HandlerUploadError(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan utils.Chunk)
+	reader, writer := io.Pipe()
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
-	wait, initErr := handler.Handler(chunks, now)
+	wait, initErr := handler.Handler(reader, now)
 	if initErr != nil {
 		t.Fatalf("unexpected error: %s", initErr)
 	}
-	chunks <- utils.Chunk{Data: []byte("10ms")}
-	chunks <- utils.Chunk{Data: []byte("error")}
-	chunks <- utils.Chunk{Data: []byte("1ms")}
-	close(chunks)
+	for _, str := range []string{"10ms", "error", "5ms"} {
+		if bytes, err := writer.Write(padPart([]byte(str))); err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		} else if bytes < s3ChunkMinSize {
+			t.Errorf("expected at least %d written bytes, got %d", s3ChunkMinSize, bytes)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
 
 	if err := wait(); err == nil {
 		t.Error("expected error, got nil")
@@ -294,16 +325,22 @@ func TestS3HandlerChunkError(t *testing.T) {
 		Prefix: "foo/",
 	}
 	handler := &S3Handler{client: client, destination: dest}
-
-	chunks := make(chan utils.Chunk)
+	reader, writer := io.Pipe()
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
-	wait, initErr := handler.Handler(chunks, now)
+	wait, initErr := handler.Handler(reader, now)
 	if initErr != nil {
 		t.Fatalf("unexpected error: %s", initErr)
 	}
-	chunks <- utils.Chunk{Data: []byte("10ms")}
-	chunks <- utils.Chunk{Data: []byte("5ms"), Error: errors.New("test error")}
-	close(chunks)
+	for _, str := range []string{"10ms", "5ms"} {
+		if bytes, err := writer.Write(padPart([]byte(str))); err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		} else if bytes < s3ChunkMinSize {
+			t.Errorf("expected at least %d written bytes, got %d", s3ChunkMinSize, bytes)
+		}
+	}
+	if err := writer.CloseWithError(errors.New("test error")); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
 
 	if err := wait(); err == nil {
 		t.Error("expected error, got nil")
@@ -316,8 +353,8 @@ func TestS3HandlerChunkError(t *testing.T) {
 	if client.CalledApis.CreateMultipartUpload != 1 {
 		t.Errorf("expected CreateMultipartUpload to be called once, got %d", client.CalledApis.CreateMultipartUpload)
 	}
-	if client.CalledApis.UploadPart != 1 {
-		t.Errorf("expected UploadPart to be called once, got %d", client.CalledApis.UploadPart)
+	if client.CalledApis.UploadPart != 2 {
+		t.Errorf("expected UploadPart to be called twice, got %d", client.CalledApis.UploadPart)
 	}
 	if client.CalledApis.CompleteMultipartUpload != 0 {
 		t.Errorf("expected CompleteMultipartUpload to be called 0 times, got %d", client.CalledApis.AbortMultipartUpload)
@@ -339,16 +376,22 @@ func TestS3HandlerCompleteError(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan utils.Chunk)
+	reader, writer := io.Pipe()
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
-	wait, initErr := handler.Handler(chunks, now)
+	wait, initErr := handler.Handler(reader, now)
 	if initErr != nil {
 		t.Fatalf("unexpected error: %s", initErr)
 	}
-	chunks <- utils.Chunk{Data: []byte("10ms")}
-	chunks <- utils.Chunk{Data: []byte("5ms")}
-	chunks <- utils.Chunk{Data: []byte("5ms")}
-	close(chunks)
+	for _, str := range []string{"10ms", "5ms", "5ms"} {
+		if bytes, err := writer.Write(padPart([]byte(str))); err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		} else if bytes < s3ChunkMinSize {
+			t.Errorf("expected at least %d written bytes, got %d", s3ChunkMinSize, bytes)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
 
 	if err := wait(); err == nil {
 		t.Error("expected error, got nil")
@@ -384,15 +427,22 @@ func TestS3HandlerAbortError(t *testing.T) {
 	}
 	handler := &S3Handler{client: client, destination: dest}
 
-	chunks := make(chan utils.Chunk)
+	reader, writer := io.Pipe()
 	now := time.Date(2021, 10, 8, 18, 9, 17, 0, time.Local)
-	wait, initErr := handler.Handler(chunks, now)
+	wait, initErr := handler.Handler(reader, now)
 	if initErr != nil {
 		t.Fatalf("unexpected error: %s", initErr)
 	}
-	chunks <- utils.Chunk{Data: []byte("10ms")}
-	chunks <- utils.Chunk{Data: []byte("5ms"), Error: errors.New("test error")}
-	close(chunks)
+	for _, str := range []string{"10ms", "5ms"} {
+		if bytes, err := writer.Write(padPart([]byte(str))); err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		} else if bytes < s3ChunkMinSize {
+			t.Errorf("expected at least %d written bytes, got %d", s3ChunkMinSize, bytes)
+		}
+	}
+	if err := writer.CloseWithError(errors.New("test error")); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
 
 	if err := wait(); err == nil {
 		t.Error("expected error, got nil")
@@ -409,8 +459,8 @@ func TestS3HandlerAbortError(t *testing.T) {
 	if client.CalledApis.CreateMultipartUpload != 1 {
 		t.Errorf("expected CreateMultipartUpload to be called once, got %d", client.CalledApis.CreateMultipartUpload)
 	}
-	if client.CalledApis.UploadPart != 1 {
-		t.Errorf("expected UploadPart to be called once, got %d", client.CalledApis.UploadPart)
+	if client.CalledApis.UploadPart != 2 {
+		t.Errorf("expected UploadPart to be called twice, got %d", client.CalledApis.UploadPart)
 	}
 	if client.CalledApis.CompleteMultipartUpload != 0 {
 		t.Errorf("expected CompleteMultipartUpload to be called 0 times, got %d", client.CalledApis.AbortMultipartUpload)

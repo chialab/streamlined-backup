@@ -15,10 +15,6 @@ import (
 	"github.com/hashicorp/go-multierror"
 )
 
-const CHUNK_SIZE = 10 << 20
-
-const CHUNK_BUFFER = 8
-
 const DEFAULT_TIMEOUT = time.Minute * 10
 
 type Task struct {
@@ -127,8 +123,8 @@ func (t Task) runner(now time.Time) (result Result) {
 		result.logs = logsWriter.Lines()
 	}()
 
-	writer := utils.NewChunkWriter(CHUNK_SIZE, CHUNK_BUFFER)
-	wait, initErr := t.handler.Handler(writer.Chunks, now)
+	reader, writer := io.Pipe()
+	wait, initErr := t.handler.Handler(reader, now)
 	if initErr != nil {
 		t.logger.Printf("ERROR (Initialization failed): %s", initErr)
 		result.status = StatusFailed
@@ -147,7 +143,7 @@ func (t Task) runner(now time.Time) (result Result) {
 
 			result.err = panicErr
 			if writer != nil {
-				if err := writer.Abort(panicErr); err != nil {
+				if err := writer.CloseWithError(panicErr); err != nil {
 					t.logger.Printf("ERROR (Abort failed): %s", err)
 					result.err = multierror.Append(result.err, err)
 				}

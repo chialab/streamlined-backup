@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/base64"
+	"io"
 	"sort"
 	"strings"
 	"sync"
@@ -12,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/chialab/streamlined-backup/config"
-	"github.com/chialab/streamlined-backup/utils"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -42,6 +43,9 @@ type s3MultipartUpload struct {
 	Error    error
 }
 
+const s3ChunkMinSize = 5 << 20  // 5 MiB
+const s3ChunkMaxSize = 32 << 20 // 32 MiB
+
 func newS3Handler(destination config.S3DestinationDefinition) *S3Handler {
 	return &S3Handler{
 		client:      destination.Client(),
@@ -54,29 +58,40 @@ type S3Handler struct {
 	destination config.S3DestinationDefinition
 }
 
-func (h S3Handler) Handler(chunks <-chan utils.Chunk, timestamp time.Time) (func() error, error) {
+func (h S3Handler) Handler(reader *io.PipeReader, timestamp time.Time) (func() error, error) {
 	upload, err := h.initMultipartUpload(timestamp)
 	if err != nil {
 		return nil, err
 	}
 
 	go func() {
+		defer reader.Close()
 		wg := sync.WaitGroup{}
 		partNumber := int64(1)
-		for chunk := range chunks {
-			if chunk.Error != nil {
-				upload.Error = chunk.Error
-
+		for {
+			buf := make([]byte, s3ChunkMaxSize)
+			bytes, err := io.ReadAtLeast(reader, buf, s3ChunkMinSize)
+			if err == io.EOF {
 				break
+			} else if err != nil && err != io.ErrUnexpectedEOF {
+				upload.Error = err
+				break
+			} else if bytes == 0 {
+				continue
 			}
+			buf = buf[:bytes]
 
 			wg.Add(1)
-			go func(partNumber int64, chunk utils.Chunk) {
+			go func(partNumber int64, chunk []byte) {
 				defer wg.Done()
 
 				upload.Parts <- h.uploadPart(upload, partNumber, chunk)
-			}(partNumber, chunk)
+			}(partNumber, buf)
 			partNumber++
+
+			if err == io.ErrUnexpectedEOF {
+				break
+			}
 		}
 		wg.Wait()
 		close(upload.Parts)
@@ -132,18 +147,18 @@ func (h S3Handler) initMultipartUpload(timestamp time.Time) (*s3MultipartUpload,
 	}
 }
 
-func (h S3Handler) uploadPart(upload *s3MultipartUpload, partNumber int64, chunk utils.Chunk) s3UploadedPart {
+func (h S3Handler) uploadPart(upload *s3MultipartUpload, partNumber int64, chunk []byte) s3UploadedPart {
 	hash := md5.New()
-	hash.Write(chunk.Data)
+	hash.Write(chunk)
 	md5sum := base64.StdEncoding.EncodeToString(hash.Sum(nil))
 
 	input := &s3.UploadPartInput{
 		Bucket:        aws.String(upload.Bucket),
 		Key:           aws.String(upload.Key),
 		UploadId:      aws.String(upload.UploadId),
-		Body:          chunk.NewReader(),
+		Body:          bytes.NewReader(chunk),
 		PartNumber:    aws.Int64(partNumber),
-		ContentLength: aws.Int64(int64(len(chunk.Data))),
+		ContentLength: aws.Int64(int64(len(chunk))),
 		ContentMD5:    aws.String(md5sum),
 	}
 	if result, err := h.client.UploadPart(input); err != nil {

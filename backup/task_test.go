@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -33,30 +34,57 @@ func newTestLogger() (*log.Logger, func() []string) {
 	return logger, lines
 }
 
+var testChunkSize = 256 << 10 // 256 KiB
+
 type testHandler struct {
+	chunkSize  int
 	lastRun    time.Time
-	chunks     []utils.Chunk
+	chunks     [][]byte
 	lastRunErr error
 	initErr    error
 	err        error
+}
+
+func (h testHandler) size() int {
+	if h.chunkSize == 0 {
+		return testChunkSize
+	}
+
+	return h.chunkSize
 }
 
 func (r *testHandler) LastRun() (time.Time, error) {
 	return r.lastRun, r.lastRunErr
 }
 
-func (h *testHandler) Handler(chunks <-chan utils.Chunk, now time.Time) (func() error, error) {
+func (h *testHandler) Handler(reader *io.PipeReader, now time.Time) (func() error, error) {
 	if h.initErr != nil {
 		return nil, h.initErr
 	}
 
-	done := make(chan bool, 1)
+	done := make(chan error)
 	go func() {
-		for chunk := range chunks {
-			h.chunks = append(h.chunks, chunk)
+		defer close(done)
+
+		for {
+			chunk := make([]byte, h.size())
+			bytes, err := io.ReadAtLeast(reader, chunk, h.size())
+			if err == io.EOF {
+				break
+			} else if err != nil && err != io.ErrUnexpectedEOF {
+				done <- err
+				return
+			} else if bytes == 0 {
+				continue
+			}
+			h.chunks = append(h.chunks, chunk[:bytes])
+
+			if err == io.EOF {
+				break
+			}
 		}
 
-		done <- true
+		done <- nil
 	}()
 
 	return func() error {
@@ -292,10 +320,8 @@ func TestRun(t *testing.T) {
 		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
 	}
 
-	if chunk := handler.chunks[0]; chunk.Error != nil {
-		t.Errorf("unexpected error: %s", chunk.Error)
-	} else if string(chunk.Data) != expectedData {
-		t.Errorf("expected %q, got %q", expectedData, chunk.Data)
+	if chunk := handler.chunks[0]; string(chunk) != expectedData {
+		t.Errorf("expected %q, got %q", expectedData, chunk)
 	}
 
 	expectedLogs := []string{"logging", "DONE"}
@@ -307,11 +333,11 @@ func TestRun(t *testing.T) {
 func TestRunLongOutput(t *testing.T) {
 	t.Parallel()
 
-	extraSize := 256 << 10
+	extraSize := testChunkSize / 2
 	handler := &testHandler{}
 	logger, lines := newTestLogger()
 	task := &Task{
-		command: []string{"bash", "-c", fmt.Sprintf("yes | head -c %d", CHUNK_SIZE+extraSize)},
+		command: []string{"bash", "-c", fmt.Sprintf("yes | head -c %d", testChunkSize+extraSize)},
 		handler: handler,
 		logger:  logger,
 	}
@@ -323,16 +349,12 @@ func TestRunLongOutput(t *testing.T) {
 		t.Errorf("expected 2 chunks, got %d", len(handler.chunks))
 	}
 
-	if chunk := handler.chunks[0]; chunk.Error != nil {
-		t.Errorf("unexpected error: %s", chunk.Error)
-	} else if len(chunk.Data) != CHUNK_SIZE {
-		t.Errorf("expected %d bytes, got %d", CHUNK_SIZE, len(chunk.Data))
+	if chunk := handler.chunks[0]; len(chunk) < testChunkSize {
+		t.Errorf("expected at least %d bytes, got %d", testChunkSize, len(chunk))
 	}
 
-	if chunk := handler.chunks[1]; chunk.Error != nil {
-		t.Errorf("unexpected error: %s", chunk.Error)
-	} else if len(chunk.Data) != extraSize {
-		t.Errorf("expected %d bytes, got %d", extraSize, len(chunk.Data))
+	if chunk := handler.chunks[1]; len(chunk) > extraSize {
+		t.Errorf("expected at most %d bytes, got %d", extraSize, len(chunk))
 	}
 	expectedLogs := []string{"DONE"}
 	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
@@ -470,7 +492,7 @@ func TestTaskRunner(t *testing.T) {
 			status:   StatusFailed,
 			errCodes: []ErrorCode{CommandFailedError, HandlerError},
 			logs:     []string{"ERROR (Command failed): exit status 1", "ERROR (Upload abort failed): test error"},
-			chunks:   []string{""},
+			chunks:   []string{},
 		},
 		"start_error": {
 			handler:  &testHandler{},
@@ -478,10 +500,10 @@ func TestTaskRunner(t *testing.T) {
 			status:   StatusFailed,
 			errCodes: []ErrorCode{CommandStartError},
 			logs:     []string{"ERROR (Command start): exec: \"this-cmd-does-not-exist\": executable file not found in $PATH"},
-			chunks:   []string{""},
+			chunks:   []string{},
 		},
 		"non_zero_exit_code": {
-			handler:  &testHandler{},
+			handler:  &testHandler{chunkSize: 7},
 			command:  []string{"bash", "-c", "echo output && echo error >&2 && exit 42"},
 			status:   StatusFailed,
 			errCodes: []ErrorCode{CommandFailedError},
@@ -494,7 +516,7 @@ func TestTaskRunner(t *testing.T) {
 			status:   StatusTimeout,
 			errCodes: []ErrorCode{CommandTimeoutError},
 			logs:     []string{"TIMEOUT (Command took more than 30ms)"},
-			chunks:   []string{""},
+			chunks:   []string{},
 		},
 	}
 	for name, tc := range testCases {
@@ -530,10 +552,10 @@ func TestTaskRunner(t *testing.T) {
 
 			chunks := []string{}
 			for _, chunk := range tc.handler.chunks {
-				chunks = append(chunks, string(chunk.Data))
+				chunks = append(chunks, string(chunk))
 			}
 			if !reflect.DeepEqual(chunks, tc.chunks) {
-				t.Errorf("expected data %+v, got %+v", tc.chunks, chunks)
+				t.Errorf("expected data %#v, got %#v", tc.chunks, chunks)
 			}
 		})
 	}
