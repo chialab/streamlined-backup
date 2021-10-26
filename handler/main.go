@@ -2,14 +2,14 @@ package handler
 
 import (
 	"errors"
+	"io"
 	"time"
 
 	"github.com/chialab/streamlined-backup/config"
-	"github.com/chialab/streamlined-backup/utils"
 )
 
 type Handler interface {
-	Handler(<-chan utils.Chunk, time.Time) (func() error, error)
+	Handler(*io.PipeReader, time.Time) (func() error, error)
 	LastRun() (time.Time, error)
 }
 
