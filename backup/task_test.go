@@ -100,8 +100,8 @@ func TestNewTasks(t *testing.T) {
 	cfg := config.Task{
 		Command: []string{"echo", "foo bar"},
 		Env:     []string{"FOO=bar"},
-		Destination: config.Destination{
-			Type: "s3",
+		Destination: []config.Destination{
+			{Type: "s3"},
 		},
 	}
 
@@ -118,8 +118,13 @@ func TestNewTasks(t *testing.T) {
 	if !reflect.DeepEqual(task.env, []string{"FOO=bar"}) {
 		t.Errorf("expected task env 'FOO=bar', got %v", task.env)
 	}
-	if _, ok := task.handler.(*handler.S3Handler); !ok {
-		t.Errorf("expected S3Handler, got %T", task.handler)
+	if len(task.destinations) != 1 {
+		t.Errorf("expected 1 destination, got %d", len(task.destinations))
+	}
+	for _, dest := range task.destinations {
+		if _, ok := dest.handler.(*handler.S3Handler); !ok {
+			t.Errorf("expected S3Handler, got %T", dest.handler)
+		}
 	}
 	if task.logger.Prefix() != "[foo] " {
 		t.Errorf("expected log prefix '[foo] ', got %s", task.logger.Prefix())
@@ -148,8 +153,8 @@ func TestNewTasksInvalidTimeout(t *testing.T) {
 		Command: []string{"echo", "bar foo"},
 		Env:     []string{"BAR=foo"},
 		Timeout: "foo bar",
-		Destination: config.Destination{
-			Type: "s3",
+		Destination: []config.Destination{
+			{Type: "s3"},
 		},
 	}
 
@@ -256,7 +261,11 @@ func TestShouldRun(t *testing.T) {
 				t.Fatalf("unexpected error: %s", err)
 			}
 			handler := &testHandler{lastRun: tc.lastRun}
-			task := &Task{schedule: *schedule, handler: handler}
+			task := &Task{
+				destinations: []destination{
+					{schedule: *schedule, handler: handler},
+				},
+			}
 
 			if result, err := task.shouldRun(now); err != nil {
 				t.Errorf("unexpected error: %s", err)
@@ -279,7 +288,11 @@ func TestShouldRunError(t *testing.T) {
 	}
 	testErr := errors.New("test error")
 	handler := &testHandler{lastRunErr: testErr}
-	task := &Task{schedule: *schedule, handler: handler}
+	task := &Task{
+		destinations: []destination{
+			{schedule: *schedule, handler: handler},
+		},
+	}
 
 	now := time.Date(2021, 10, 6, 19, 10, 38, 0, time.Local)
 	if result, err := task.shouldRun(now); result != false {
@@ -305,8 +318,10 @@ func TestRun(t *testing.T) {
 		command: []string{"bash", "-c", "echo $FOO; pwd; echo logging >&2"},
 		cwd:     tmpDir,
 		env:     []string{"FOO=barbaz"},
-		handler: handler,
-		logger:  logger,
+		destinations: []destination{
+			{handler: handler},
+		},
+		logger: logger,
 	}
 	expectedData := fmt.Sprintf("barbaz\n%s\n", tmpDir)
 	expectedResultLogs := []string{"logging"}
@@ -338,8 +353,10 @@ func TestRunLongOutput(t *testing.T) {
 	logger, lines := newTestLogger()
 	task := &Task{
 		command: []string{"bash", "-c", fmt.Sprintf("yes | head -c %d", testChunkSize+extraSize)},
-		handler: handler,
-		logger:  logger,
+		destinations: []destination{
+			{handler: handler},
+		},
+		logger: logger,
 	}
 
 	if res := task.Run(time.Now()); res.Status() != StatusSuccess {
@@ -373,10 +390,11 @@ func TestRunSkipped(t *testing.T) {
 	}
 	logger, lines := newTestLogger()
 	task := &Task{
-		schedule: *schedule,
-		command:  []string{"echo", "hello world"},
-		handler:  handler,
-		logger:   logger,
+		command: []string{"echo", "hello world"},
+		destinations: []destination{
+			{handler: handler, schedule: *schedule},
+		},
+		logger: logger,
 	}
 
 	now := time.Date(2021, 10, 12, 10, 59, 38, 0, time.Local)
@@ -402,8 +420,10 @@ func TestRunHandlerInitError(t *testing.T) {
 	logger, lines := newTestLogger()
 	task := &Task{
 		command: []string{"echo", "hello world"},
-		handler: handler,
-		logger:  logger,
+		destinations: []destination{
+			{handler: handler},
+		},
+		logger: logger,
 	}
 
 	if res := task.Run(time.Now()); res.Status() != StatusFailed {
@@ -430,8 +450,10 @@ func TestRunLastRunError(t *testing.T) {
 	logger, lines := newTestLogger()
 	task := &Task{
 		command: []string{"echo", "hello world"},
-		handler: handler,
-		logger:  logger,
+		destinations: []destination{
+			{handler: handler},
+		},
+		logger: logger,
 	}
 
 	if res := task.Run(time.Now()); res.Status() != StatusFailed {
@@ -525,8 +547,10 @@ func TestTaskRunner(t *testing.T) {
 			task := &Task{
 				command: tc.command,
 				timeout: 30 * time.Millisecond,
-				handler: tc.handler,
-				logger:  logger,
+				destinations: []destination{
+					{handler: tc.handler},
+				},
+				logger: logger,
 			}
 
 			result := task.runner(time.Now())

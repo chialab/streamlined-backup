@@ -17,10 +17,10 @@ func TestLoadConfigurationToml(t *testing.T) {
 
 	data := `
 [backup_mysql_database]
-schedule = "30 4 * * *"
 command = ["/bin/sh", "-c", "mysqldump --single-transaction --column-statistics=0 --set-gtid-purged=off my_database | bzip2"]
-    [backup_mysql_database.destination]
+    [[backup_mysql_database.destination]]
     type = "s3"
+    schedule = "30 4 * * *"
         [backup_mysql_database.destination.s3]
         region = "eu-west-1"
         profile = "streamlined-backup-test"
@@ -29,10 +29,10 @@ command = ["/bin/sh", "-c", "mysqldump --single-transaction --column-statistics=
         suffix = "-my_database.sql.bz2"
 
 [my_tar_archive]
-schedule = "30 4 * * *"
 command = ["tar", "-cvjf-", "/path/to/files"]
-    [my_tar_archive.destination]
-    type = "s3"
+	[[my_tar_archive.destination]]
+	type = "s3"
+	schedule = "30 4 * * *"
         [my_tar_archive.destination.s3]
         region = "eu-west-1"
         bucket = "example-bucket"
@@ -55,33 +55,37 @@ command = ["tar", "-cvjf-", "/path/to/files"]
 
 	expected := map[string]Task{
 		"backup_mysql_database": {
-			Schedule: *schedule,
-			Command:  []string{"/bin/sh", "-c", "mysqldump --single-transaction --column-statistics=0 --set-gtid-purged=off my_database | bzip2"},
-			Destination: Destination{
-				Type: S3Destination,
-				S3: S3DestinationDefinition{
-					Region:  "eu-west-1",
-					Profile: &testAwsProfile,
-					Bucket:  "example-bucket",
-					Prefix:  "my_database/daily/",
-					Suffix:  "-my_database.sql.bz2",
+			Command: []string{"/bin/sh", "-c", "mysqldump --single-transaction --column-statistics=0 --set-gtid-purged=off my_database | bzip2"},
+			Destination: []Destination{
+				Destination{
+					Type:     S3Destination,
+					Schedule: *schedule,
+					S3: S3DestinationDefinition{
+						Region:  "eu-west-1",
+						Profile: &testAwsProfile,
+						Bucket:  "example-bucket",
+						Prefix:  "my_database/daily/",
+						Suffix:  "-my_database.sql.bz2",
+					},
 				},
 			},
 		},
 		"my_tar_archive": {
-			Schedule: *schedule,
-			Command:  []string{"tar", "-cvjf-", "/path/to/files"},
-			Destination: Destination{
-				Type: S3Destination,
-				S3: S3DestinationDefinition{
-					Region: "eu-west-1",
-					Credentials: &S3Credentials{
-						AccessKeyId:     "AKIAIOSFODNN7EXAMPLE",
-						SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+			Command: []string{"tar", "-cvjf-", "/path/to/files"},
+			Destination: []Destination{
+				Destination{
+					Type:     S3Destination,
+					Schedule: *schedule,
+					S3: S3DestinationDefinition{
+						Region: "eu-west-1",
+						Credentials: &S3Credentials{
+							AccessKeyId:     "AKIAIOSFODNN7EXAMPLE",
+							SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+						},
+						Bucket: "example-bucket",
+						Prefix: "my_tar_archive/daily/",
+						Suffix: "-my_tar_archive.tar.bz2",
 					},
-					Bucket: "example-bucket",
-					Prefix: "my_tar_archive/daily/",
-					Suffix: "-my_tar_archive.tar.bz2",
 				},
 			},
 		},
@@ -91,19 +95,8 @@ command = ["tar", "-cvjf-", "/path/to/files"]
 	if err != nil {
 		t.Errorf("unexpected error: %s", err)
 	}
-	for name, task := range config {
-		if task.Schedule.String() != expected[name].Schedule.String() {
-			t.Errorf("expected %s, got %s", expected[name].Schedule.String(), task.Schedule.String())
-		}
-		if !reflect.DeepEqual(task.Command, expected[name].Command) {
-			t.Errorf("expected %#v, got %#v", expected[name].Command, task.Command)
-		}
-		if !reflect.DeepEqual(task.Destination, expected[name].Destination) {
-			t.Errorf("expected %#v, got %#v", expected[name].Destination, task.Destination)
-		}
-		if !reflect.DeepEqual(task.Destination.S3.Credentials, expected[name].Destination.S3.Credentials) {
-			t.Errorf("expected %#v, got %#v", expected[name].Destination.S3.Credentials, task.Destination.S3.Credentials)
-		}
+	if !reflect.DeepEqual(config, expected) {
+		t.Errorf("expected %#v, got %#v", expected, config)
 	}
 }
 
@@ -136,10 +129,10 @@ func TestLoadConfigurationJson(t *testing.T) {
 	data := `
 {
 "backup_mysql_database": {
-    "schedule": "30 4 * * *",
     "command": ["/bin/sh", "-c", "mysqldump --single-transaction --column-statistics=0 --set-gtid-purged=off my_database | bzip2"],
-    "destination": {
+    "destinations": [{
         "type": "s3",
+        "schedule": "30 4 * * *",
         "s3": {
             "region": "eu-west-1",
             "profile": "streamlined-backup-test",
@@ -147,13 +140,13 @@ func TestLoadConfigurationJson(t *testing.T) {
             "prefix": "my_database/daily/",
             "suffix": "-my_database.sql.bz2"
         }
-    }
+    }]
 },
 "my_tar_archive": {
-    "schedule": "30 4 * * *",
     "command": ["tar", "-cvjf-", "/path/to/files"],
-    "destination": {
+    "destinations": [{
         "type": "s3",
+        "schedule": "30 4 * * *",
         "s3": {
             "region": "eu-west-1",
             "bucket": "example-bucket",
@@ -164,7 +157,7 @@ func TestLoadConfigurationJson(t *testing.T) {
                 "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 	    }
 	}
-    }
+    }]
 }
 }
 `
@@ -181,33 +174,37 @@ func TestLoadConfigurationJson(t *testing.T) {
 
 	expected := map[string]Task{
 		"backup_mysql_database": {
-			Schedule: *schedule,
-			Command:  []string{"/bin/sh", "-c", "mysqldump --single-transaction --column-statistics=0 --set-gtid-purged=off my_database | bzip2"},
-			Destination: Destination{
-				Type: S3Destination,
-				S3: S3DestinationDefinition{
-					Region:  "eu-west-1",
-					Profile: &testAwsProfile,
-					Bucket:  "example-bucket",
-					Prefix:  "my_database/daily/",
-					Suffix:  "-my_database.sql.bz2",
+			Command: []string{"/bin/sh", "-c", "mysqldump --single-transaction --column-statistics=0 --set-gtid-purged=off my_database | bzip2"},
+			Destination: []Destination{
+				Destination{
+					Type:     S3Destination,
+					Schedule: *schedule,
+					S3: S3DestinationDefinition{
+						Region:  "eu-west-1",
+						Profile: &testAwsProfile,
+						Bucket:  "example-bucket",
+						Prefix:  "my_database/daily/",
+						Suffix:  "-my_database.sql.bz2",
+					},
 				},
 			},
 		},
 		"my_tar_archive": {
-			Schedule: *schedule,
-			Command:  []string{"tar", "-cvjf-", "/path/to/files"},
-			Destination: Destination{
-				Type: S3Destination,
-				S3: S3DestinationDefinition{
-					Region: "eu-west-1",
-					Credentials: &S3Credentials{
-						AccessKeyId:     "AKIAIOSFODNN7EXAMPLE",
-						SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+			Command: []string{"tar", "-cvjf-", "/path/to/files"},
+			Destination: []Destination{
+				Destination{
+					Type:     S3Destination,
+					Schedule: *schedule,
+					S3: S3DestinationDefinition{
+						Region: "eu-west-1",
+						Credentials: &S3Credentials{
+							AccessKeyId:     "AKIAIOSFODNN7EXAMPLE",
+							SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+						},
+						Bucket: "example-bucket",
+						Prefix: "my_tar_archive/daily/",
+						Suffix: "-my_tar_archive.tar.bz2",
 					},
-					Bucket: "example-bucket",
-					Prefix: "my_tar_archive/daily/",
-					Suffix: "-my_tar_archive.tar.bz2",
 				},
 			},
 		},
@@ -217,19 +214,8 @@ func TestLoadConfigurationJson(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %s", err)
 	}
-	for name, task := range config {
-		if task.Schedule.String() != expected[name].Schedule.String() {
-			t.Errorf("expected %s, got %s", expected[name].Schedule.String(), task.Schedule.String())
-		}
-		if !reflect.DeepEqual(task.Command, expected[name].Command) {
-			t.Errorf("expected %#v, got %#v", expected[name].Command, task.Command)
-		}
-		if !reflect.DeepEqual(task.Destination, expected[name].Destination) {
-			t.Errorf("expected %#v, got %#v", expected[name].Destination, task.Destination)
-		}
-		if !reflect.DeepEqual(task.Destination.S3.Credentials, expected[name].Destination.S3.Credentials) {
-			t.Errorf("expected %#v, got %#v", expected[name].Destination.S3.Credentials, task.Destination.S3.Credentials)
-		}
+	if !reflect.DeepEqual(config, expected) {
+		t.Errorf("expected %#v, got %#v", expected, config)
 	}
 }
 

@@ -17,25 +17,42 @@ import (
 
 const DEFAULT_TIMEOUT = time.Minute * 10
 
-type Task struct {
-	name     string
-	schedule utils.ScheduleExpression
-	command  []string
-	cwd      string
-	env      []string
-	timeout  time.Duration
+type destination struct {
 	handler  handler.Handler
-	logger   *log.Logger
+	schedule utils.ScheduleExpression
+}
+
+type Task struct {
+	name         string
+	command      []string
+	cwd          string
+	env          []string
+	timeout      time.Duration
+	destinations []destination
+	logger       *log.Logger
 }
 
 func NewTask(name string, def config.Task) (*Task, error) {
 	logger := log.New(os.Stderr, fmt.Sprintf("[%s] ", name), log.LstdFlags|log.Lmsgprefix)
-	handler, err := handler.NewHandler(def.Destination)
-	if err != nil {
-		return nil, err
+
+	if len(def.Destination) == 0 {
+		return nil, handler.ErrUnknownDestination
+	}
+
+	destinations := make([]destination, len(def.Destination))
+	for i, dest := range def.Destination {
+		handler, err := handler.NewHandler(dest)
+		if err != nil {
+			return nil, err
+		}
+		destinations[i] = destination{
+			handler:  handler,
+			schedule: dest.Schedule,
+		}
 	}
 
 	var timeout time.Duration
+	var err error
 	if def.Timeout != "" {
 		timeout, err = time.ParseDuration(def.Timeout)
 		if err != nil {
@@ -44,14 +61,13 @@ func NewTask(name string, def config.Task) (*Task, error) {
 	}
 
 	return &Task{
-		name:     name,
-		schedule: def.Schedule,
-		command:  def.Command,
-		cwd:      def.Cwd,
-		env:      def.Env,
-		timeout:  timeout,
-		handler:  handler,
-		logger:   logger,
+		name:         name,
+		command:      def.Command,
+		cwd:          def.Cwd,
+		env:          def.Env,
+		timeout:      timeout,
+		destinations: destinations,
+		logger:       logger,
 	}, nil
 }
 
@@ -88,7 +104,7 @@ func (t Task) Timeout() time.Duration {
 }
 
 func (t Task) shouldRun(now time.Time) (bool, error) {
-	lastRun, err := t.handler.LastRun()
+	lastRun, err := t.destinations[0].handler.LastRun()
 	if err != nil {
 		return false, err
 	}
@@ -97,7 +113,7 @@ func (t Task) shouldRun(now time.Time) (bool, error) {
 		return true, nil
 	}
 
-	return t.schedule.Next(lastRun).Before(now), nil
+	return t.destinations[0].schedule.Next(lastRun).Before(now), nil
 }
 
 func (t Task) Run(now time.Time) Result {
@@ -124,7 +140,7 @@ func (t Task) runner(now time.Time) (result Result) {
 	}()
 
 	reader, writer := io.Pipe()
-	wait, initErr := t.handler.Handler(reader, now)
+	wait, initErr := t.destinations[0].handler.Handler(reader, now)
 	if initErr != nil {
 		t.logger.Printf("ERROR (Initialization failed): %s", initErr)
 		result.status = StatusFailed

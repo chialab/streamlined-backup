@@ -198,7 +198,7 @@ func TestRunInvalidConfig(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	configFile := path.Join(tmpDir, "foo.json")
-	data := `{"foo": {"timeout": "5s", "destination": {"type": "unknown"}}}`
+	data := `{"foo": {"timeout": "5s", "destinations": [{"type": "unknown"}]}}`
 	if err := os.WriteFile(configFile, []byte(data), 0644); err != nil {
 		t.Fatalf("unepected error: %s", err)
 	}
@@ -222,7 +222,7 @@ func TestRunPidRunning(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	configFile := path.Join(tmpDir, "foo.json")
-	data := `{"foo": {"destination": {"type": "s3"}}}`
+	data := `{"foo": {"destinations": [{"type": "s3"}]}}`
 	if err := os.WriteFile(configFile, []byte(data), 0644); err != nil {
 		t.Fatalf("unepected error: %s", err)
 	}
