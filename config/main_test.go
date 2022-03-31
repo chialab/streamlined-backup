@@ -56,7 +56,7 @@ command = ["tar", "-cvjf-", "/path/to/files"]
 	expected := map[string]Task{
 		"backup_mysql_database": {
 			Command: []string{"/bin/sh", "-c", "mysqldump --single-transaction --column-statistics=0 --set-gtid-purged=off my_database | bzip2"},
-			Destination: []Destination{
+			Destinations: []Destination{
 				Destination{
 					Type:     S3Destination,
 					Schedule: *schedule,
@@ -72,7 +72,7 @@ command = ["tar", "-cvjf-", "/path/to/files"]
 		},
 		"my_tar_archive": {
 			Command: []string{"tar", "-cvjf-", "/path/to/files"},
-			Destination: []Destination{
+			Destinations: []Destination{
 				Destination{
 					Type:     S3Destination,
 					Schedule: *schedule,
@@ -175,7 +175,7 @@ func TestLoadConfigurationJson(t *testing.T) {
 	expected := map[string]Task{
 		"backup_mysql_database": {
 			Command: []string{"/bin/sh", "-c", "mysqldump --single-transaction --column-statistics=0 --set-gtid-purged=off my_database | bzip2"},
-			Destination: []Destination{
+			Destinations: []Destination{
 				Destination{
 					Type:     S3Destination,
 					Schedule: *schedule,
@@ -191,7 +191,7 @@ func TestLoadConfigurationJson(t *testing.T) {
 		},
 		"my_tar_archive": {
 			Command: []string{"tar", "-cvjf-", "/path/to/files"},
-			Destination: []Destination{
+			Destinations: []Destination{
 				Destination{
 					Type:     S3Destination,
 					Schedule: *schedule,

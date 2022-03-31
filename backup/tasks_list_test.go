@@ -63,14 +63,15 @@ func TestNewTasksList(t *testing.T) {
 		"foo": {
 			Command: []string{"echo", "foo bar"},
 			Env:     []string{"FOO=bar"},
-			Destination: []config.Destination{
+			Destinations: []config.Destination{
 				{Type: "s3"},
 			},
 		},
 		"bar": {
 			Command: []string{"echo", "bar foo"},
 			Env:     []string{"BAR=foo"},
-			Destination: []config.Destination{
+			Destinations: []config.Destination{
+				{Type: "s3"},
 				{Type: "s3"},
 			},
 		},
@@ -103,11 +104,6 @@ func TestNewTasksList(t *testing.T) {
 			if len(task.destinations) != 1 {
 				t.Errorf("expected 1 destination, got %d", len(task.destinations))
 			}
-			for _, dest := range task.destinations {
-				if _, ok := dest.handler.(*handler.S3Handler); !ok {
-					t.Errorf("expected S3Handler, got %T", dest.handler)
-				}
-			}
 			if task.logger.Prefix() != "[foo] " {
 				t.Errorf("expected log prefix '[foo] ', got %s", task.logger.Prefix())
 			}
@@ -118,13 +114,8 @@ func TestNewTasksList(t *testing.T) {
 			if !reflect.DeepEqual(task.env, []string{"BAR=foo"}) {
 				t.Errorf("expected task env 'BAR=foo', got %v", task.env)
 			}
-			if len(task.destinations) != 1 {
+			if len(task.destinations) != 2 {
 				t.Errorf("expected 1 destination, got %d", len(task.destinations))
-			}
-			for _, dest := range task.destinations {
-				if _, ok := dest.handler.(*handler.S3Handler); !ok {
-					t.Errorf("expected S3Handler, got %T", dest.handler)
-				}
 			}
 			if task.logger.Prefix() != "[bar] " {
 				t.Errorf("expected log prefix '[bar] ', got %s", task.logger.Prefix())
@@ -145,7 +136,7 @@ func TestNewTasksListError(t *testing.T) {
 		"foo": {
 			Command: []string{"echo", "foo bar"},
 			Env:     []string{"FOO=bar"},
-			Destination: []config.Destination{
+			Destinations: []config.Destination{
 				{Type: "s3"},
 			},
 		},

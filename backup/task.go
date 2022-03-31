@@ -17,37 +17,29 @@ import (
 
 const DEFAULT_TIMEOUT = time.Minute * 10
 
-type destination struct {
-	handler  handler.Handler
-	schedule utils.ScheduleExpression
-}
-
 type Task struct {
 	name         string
 	command      []string
 	cwd          string
 	env          []string
 	timeout      time.Duration
-	destinations []destination
+	destinations handler.Destinations
 	logger       *log.Logger
 }
 
 func NewTask(name string, def config.Task) (*Task, error) {
 	logger := log.New(os.Stderr, fmt.Sprintf("[%s] ", name), log.LstdFlags|log.Lmsgprefix)
 
-	if len(def.Destination) == 0 {
+	if len(def.Destinations) == 0 {
 		return nil, handler.ErrUnknownDestination
 	}
 
-	destinations := make([]destination, len(def.Destination))
-	for i, dest := range def.Destination {
-		handler, err := handler.NewHandler(dest)
-		if err != nil {
+	destinations := make(handler.Destinations, len(def.Destinations))
+	for i, dest := range def.Destinations {
+		if destination, err := handler.NewDestination(dest); err != nil {
 			return nil, err
-		}
-		destinations[i] = destination{
-			handler:  handler,
-			schedule: dest.Schedule,
+		} else {
+			destinations[i] = destination
 		}
 	}
 
@@ -103,34 +95,21 @@ func (t Task) Timeout() time.Duration {
 	return t.timeout
 }
 
-func (t Task) shouldRun(now time.Time) (bool, error) {
-	lastRun, err := t.destinations[0].handler.LastRun()
-	if err != nil {
-		return false, err
-	}
-
-	if lastRun.IsZero() {
-		return true, nil
-	}
-
-	return t.destinations[0].schedule.Next(lastRun).Before(now), nil
-}
-
 func (t Task) Run(now time.Time) Result {
-	if run, err := t.shouldRun(now); err != nil {
+	if handlers, err := t.destinations.GetHandlers(now); err != nil {
 		t.logger.Printf("ERROR (Could not find last run): %s", err)
 
 		return NewResultFailed(&t, err, []string{})
-	} else if !run {
+	} else if len(handlers) == 0 {
 		t.logger.Print("SKIPPED")
 
 		return NewResultSkipped(&t)
+	} else {
+		return t.runner(now, handlers)
 	}
-
-	return t.runner(now)
 }
 
-func (t Task) runner(now time.Time) (result Result) {
+func (t Task) runner(now time.Time, handlers []handler.Handler) (result Result) {
 	result = Result{task: &t}
 
 	logsWriter := utils.NewLogWriter(t.logger)
@@ -140,7 +119,7 @@ func (t Task) runner(now time.Time) (result Result) {
 	}()
 
 	reader, writer := io.Pipe()
-	wait, initErr := t.destinations[0].handler.Handler(reader, now)
+	wait, initErr := handlers[0].Handler(reader, now)
 	if initErr != nil {
 		t.logger.Printf("ERROR (Initialization failed): %s", initErr)
 		result.status = StatusFailed

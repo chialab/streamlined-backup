@@ -12,11 +12,11 @@ import (
 var ErrUnsupportedConfigFile = errors.New("unsupported config file")
 
 type Task struct {
-	Command     []string      `json:"command" toml:"command"`
-	Cwd         string        `json:"cwd" toml:"cwd"`
-	Env         []string      `json:"env" toml:"env"`
-	Timeout     string        `json:"timeout" toml:"timeout"`
-	Destination []Destination `json:"destinations" toml:"destination"`
+	Command      []string      `json:"command" toml:"command"`
+	Cwd          string        `json:"cwd" toml:"cwd"`
+	Env          []string      `json:"env" toml:"env"`
+	Timeout      string        `json:"timeout" toml:"timeout"`
+	Destinations []Destination `json:"destinations" toml:"destination"`
 }
 
 func LoadConfiguration(path string) (map[string]Task, error) {
