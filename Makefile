@@ -7,7 +7,7 @@ clean:
 build:
 	@for GOOS in linux darwin; do \
 		for GOARCH in amd64 arm64; do \
-			go build -o build/stremlined-backup-$${GOOS}-$${GOARCH} -v main.go; \
+			go build -o build/streamlined-backup-$${GOOS}-$${GOARCH} -v main.go; \
 		done; \
 	done
 

@@ -100,8 +100,8 @@ func TestNewTasks(t *testing.T) {
 	cfg := config.Task{
 		Command: []string{"echo", "foo bar"},
 		Env:     []string{"FOO=bar"},
-		Destination: config.Destination{
-			Type: "s3",
+		Destinations: []config.Destination{
+			{Type: "s3"},
 		},
 	}
 
@@ -118,8 +118,8 @@ func TestNewTasks(t *testing.T) {
 	if !reflect.DeepEqual(task.env, []string{"FOO=bar"}) {
 		t.Errorf("expected task env 'FOO=bar', got %v", task.env)
 	}
-	if _, ok := task.handler.(*handler.S3Handler); !ok {
-		t.Errorf("expected S3Handler, got %T", task.handler)
+	if len(task.destinations) != 1 {
+		t.Errorf("expected 1 destination, got %d", len(task.destinations))
 	}
 	if task.logger.Prefix() != "[foo] " {
 		t.Errorf("expected log prefix '[foo] ', got %s", task.logger.Prefix())
@@ -148,8 +148,8 @@ func TestNewTasksInvalidTimeout(t *testing.T) {
 		Command: []string{"echo", "bar foo"},
 		Env:     []string{"BAR=foo"},
 		Timeout: "foo bar",
-		Destination: config.Destination{
-			Type: "s3",
+		Destinations: []config.Destination{
+			{Type: "s3"},
 		},
 	}
 
@@ -220,75 +220,6 @@ func TestTaskAccessors(t *testing.T) {
 	})
 }
 
-func TestShouldRun(t *testing.T) {
-	t.Parallel()
-
-	type testCase struct {
-		expected bool
-		lastRun  time.Time
-		schedule string
-	}
-	cases := map[string]testCase{
-		"yes": {
-			expected: true,
-			lastRun:  time.Date(2021, 10, 3, 19, 10, 38, 0, time.Local),
-			schedule: "0 10 * * *",
-		},
-		"no": {
-			expected: false,
-			lastRun:  time.Date(2021, 10, 3, 19, 10, 38, 0, time.Local),
-			schedule: "@weekly",
-		},
-		"never_run": {
-			expected: true,
-			lastRun:  time.Time{},
-			schedule: "@weekly",
-		},
-	}
-	now := time.Date(2021, 10, 6, 19, 10, 38, 0, time.Local)
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			var (
-				schedule *utils.ScheduleExpression
-				err      error
-			)
-			if schedule, err = utils.NewSchedule(tc.schedule); err != nil {
-				t.Fatalf("unexpected error: %s", err)
-			}
-			handler := &testHandler{lastRun: tc.lastRun}
-			task := &Task{schedule: *schedule, handler: handler}
-
-			if result, err := task.shouldRun(now); err != nil {
-				t.Errorf("unexpected error: %s", err)
-			} else if result != tc.expected {
-				t.Errorf("expected %t, got %t", tc.expected, result)
-			}
-		})
-	}
-}
-
-func TestShouldRunError(t *testing.T) {
-	t.Parallel()
-
-	var (
-		schedule *utils.ScheduleExpression
-		err      error
-	)
-	if schedule, err = utils.NewSchedule("@daily"); err != nil {
-		t.Fatalf("unexpected error: %s", err)
-	}
-	testErr := errors.New("test error")
-	handler := &testHandler{lastRunErr: testErr}
-	task := &Task{schedule: *schedule, handler: handler}
-
-	now := time.Date(2021, 10, 6, 19, 10, 38, 0, time.Local)
-	if result, err := task.shouldRun(now); result != false {
-		t.Errorf("unexpected result: %t", result)
-	} else if err != testErr {
-		t.Errorf("expected %v, got %v", testErr, err)
-	}
-}
-
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -299,14 +230,16 @@ func TestRun(t *testing.T) {
 		tmpDir = actualPath
 	}
 
-	handler := &testHandler{}
+	h := &testHandler{}
+	dest := handler.Destination{}
+	dest.SetHandler(h)
 	logger, lines := newTestLogger()
 	task := &Task{
-		command: []string{"bash", "-c", "echo $FOO; pwd; echo logging >&2"},
-		cwd:     tmpDir,
-		env:     []string{"FOO=barbaz"},
-		handler: handler,
-		logger:  logger,
+		command:      []string{"bash", "-c", "echo $FOO; pwd; echo logging >&2"},
+		cwd:          tmpDir,
+		env:          []string{"FOO=barbaz"},
+		destinations: handler.Destinations{dest},
+		logger:       logger,
 	}
 	expectedData := fmt.Sprintf("barbaz\n%s\n", tmpDir)
 	expectedResultLogs := []string{"logging"}
@@ -316,11 +249,11 @@ func TestRun(t *testing.T) {
 	} else if !reflect.DeepEqual(res.Logs(), expectedResultLogs) {
 		t.Errorf("expected %q, got %q", expectedResultLogs, res.Logs())
 	}
-	if len(handler.chunks) != 1 {
-		t.Errorf("expected 1 chunk, got %d", len(handler.chunks))
+	if len(h.chunks) != 1 {
+		t.Errorf("expected 1 chunk, got %d", len(h.chunks))
 	}
 
-	if chunk := handler.chunks[0]; string(chunk) != expectedData {
+	if chunk := h.chunks[0]; string(chunk) != expectedData {
 		t.Errorf("expected %q, got %q", expectedData, chunk)
 	}
 
@@ -334,26 +267,28 @@ func TestRunLongOutput(t *testing.T) {
 	t.Parallel()
 
 	extraSize := testChunkSize / 2
-	handler := &testHandler{}
+	h := &testHandler{}
+	dest := handler.Destination{}
+	dest.SetHandler(h)
 	logger, lines := newTestLogger()
 	task := &Task{
-		command: []string{"bash", "-c", fmt.Sprintf("yes | head -c %d", testChunkSize+extraSize)},
-		handler: handler,
-		logger:  logger,
+		command:      []string{"bash", "-c", fmt.Sprintf("yes | head -c %d", testChunkSize+extraSize)},
+		destinations: handler.Destinations{dest},
+		logger:       logger,
 	}
 
 	if res := task.Run(time.Now()); res.Status() != StatusSuccess {
 		t.Errorf("unexpected error: %+v", res)
 	}
-	if len(handler.chunks) != 2 {
-		t.Errorf("expected 2 chunks, got %d", len(handler.chunks))
+	if len(h.chunks) != 2 {
+		t.Errorf("expected 2 chunks, got %d", len(h.chunks))
 	}
 
-	if chunk := handler.chunks[0]; len(chunk) < testChunkSize {
+	if chunk := h.chunks[0]; len(chunk) < testChunkSize {
 		t.Errorf("expected at least %d bytes, got %d", testChunkSize, len(chunk))
 	}
 
-	if chunk := handler.chunks[1]; len(chunk) > extraSize {
+	if chunk := h.chunks[1]; len(chunk) > extraSize {
 		t.Errorf("expected at most %d bytes, got %d", extraSize, len(chunk))
 	}
 	expectedLogs := []string{"DONE"}
@@ -366,17 +301,18 @@ func TestRunSkipped(t *testing.T) {
 	t.Parallel()
 
 	lastRun := time.Date(2021, 10, 12, 10, 30, 38, 0, time.Local)
-	handler := &testHandler{lastRun: lastRun}
+	h := &testHandler{lastRun: lastRun}
 	schedule, err := utils.NewSchedule("0,30 * * * *")
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
+	dest := handler.Destination{}
+	dest.SetSchedule(*schedule).SetHandler(h)
 	logger, lines := newTestLogger()
 	task := &Task{
-		schedule: *schedule,
-		command:  []string{"echo", "hello world"},
-		handler:  handler,
-		logger:   logger,
+		command:      []string{"echo", "hello world"},
+		destinations: handler.Destinations{dest},
+		logger:       logger,
 	}
 
 	now := time.Date(2021, 10, 12, 10, 59, 38, 0, time.Local)
@@ -384,8 +320,8 @@ func TestRunSkipped(t *testing.T) {
 		t.Errorf("unexpected result: %+v", res)
 	}
 
-	if len(handler.chunks) != 0 {
-		t.Errorf("expected 0 chunks, got %d", len(handler.chunks))
+	if len(h.chunks) != 0 {
+		t.Errorf("expected 0 chunks, got %d", len(h.chunks))
 	}
 
 	expectedLogs := []string{"SKIPPED"}
@@ -398,12 +334,14 @@ func TestRunHandlerInitError(t *testing.T) {
 	t.Parallel()
 
 	initErr := errors.New("handler could not be initialized: init error")
-	handler := &testHandler{initErr: initErr}
+	h := &testHandler{initErr: initErr}
+	dest := handler.Destination{}
+	dest.SetHandler(h)
 	logger, lines := newTestLogger()
 	task := &Task{
-		command: []string{"echo", "hello world"},
-		handler: handler,
-		logger:  logger,
+		command:      []string{"echo", "hello world"},
+		destinations: handler.Destinations{dest},
+		logger:       logger,
 	}
 
 	if res := task.Run(time.Now()); res.Status() != StatusFailed {
@@ -412,8 +350,8 @@ func TestRunHandlerInitError(t *testing.T) {
 		t.Errorf("expected %v, got %v", initErr, res.Error())
 	}
 
-	if len(handler.chunks) != 0 {
-		t.Errorf("expected 0 chunks, got %d", len(handler.chunks))
+	if len(h.chunks) != 0 {
+		t.Errorf("expected 0 chunks, got %d", len(h.chunks))
 	}
 
 	expectedLogs := []string{"ERROR (Initialization failed): handler could not be initialized: init error"}
@@ -426,25 +364,27 @@ func TestRunLastRunError(t *testing.T) {
 	t.Parallel()
 
 	lastRunErr := errors.New("last run error")
-	handler := &testHandler{lastRunErr: lastRunErr}
+	h := &testHandler{lastRunErr: lastRunErr}
+	dest := handler.Destination{}
+	dest.SetHandler(h)
 	logger, lines := newTestLogger()
 	task := &Task{
-		command: []string{"echo", "hello world"},
-		handler: handler,
-		logger:  logger,
+		command:      []string{"echo", "hello world"},
+		destinations: handler.Destinations{dest},
+		logger:       logger,
 	}
 
 	if res := task.Run(time.Now()); res.Status() != StatusFailed {
 		t.Errorf("unexpected result: %+v", res)
-	} else if res.Error() != lastRunErr {
+	} else if !errors.Is(res.Error(), lastRunErr) {
 		t.Errorf("expected %v, got %v", lastRunErr, res.Error())
 	}
 
-	if len(handler.chunks) != 0 {
-		t.Errorf("expected 0 chunks, got %d", len(handler.chunks))
+	if len(h.chunks) != 0 {
+		t.Errorf("expected 0 chunks, got %d", len(h.chunks))
 	}
 
-	expectedLogs := []string{"ERROR (Could not find last run): last run error"}
+	expectedLogs := []string{"ERROR (Could not find last run): 1 error occurred:", "\t* last run error", ""}
 	if logs := lines(); !reflect.DeepEqual(logs, expectedLogs) {
 		t.Errorf("expected %q, got %q", expectedLogs, logs)
 	}
@@ -525,11 +465,10 @@ func TestTaskRunner(t *testing.T) {
 			task := &Task{
 				command: tc.command,
 				timeout: 30 * time.Millisecond,
-				handler: tc.handler,
 				logger:  logger,
 			}
 
-			result := task.runner(time.Now())
+			result := task.runner(time.Now(), []handler.Handler{tc.handler})
 			if result.Status() != tc.status {
 				t.Errorf("expected status %+v, got %+v", tc.status, result.Status())
 			}

@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/chialab/streamlined-backup/utils"
 )
 
 const S3_TIME_FORMAT = "20060102150405"
@@ -21,8 +22,9 @@ const (
 )
 
 type Destination struct {
-	Type DestinationType         `json:"type" toml:"type"`
-	S3   S3DestinationDefinition `json:"s3" toml:"s3"`
+	Type     DestinationType          `json:"type" toml:"type"`
+	Schedule utils.ScheduleExpression `json:"schedule" toml:"schedule"`
+	S3       S3DestinationDefinition  `json:"s3" toml:"s3"`
 }
 
 type S3DestinationDefinition struct {

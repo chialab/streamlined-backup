@@ -19,11 +19,11 @@ func TestSlackFormat(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
-	taskFoo, err := backup.NewTask("foo", config.Task{Destination: config.Destination{Type: config.S3Destination}})
+	taskFoo, err := backup.NewTask("foo", config.Task{Destinations: []config.Destination{{Type: config.S3Destination}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	taskBar, err := backup.NewTask("bar", config.Task{Command: []string{"echo", "foo bar"}, Cwd: tmpDir, Destination: config.Destination{Type: config.S3Destination}})
+	taskBar, err := backup.NewTask("bar", config.Task{Command: []string{"echo", "foo bar"}, Cwd: tmpDir, Destinations: []config.Destination{{Type: config.S3Destination}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestSlackFormat(t *testing.T) {
 func TestSlackNotify(t *testing.T) {
 	t.Parallel()
 
-	task, err := backup.NewTask("foo", config.Task{Destination: config.Destination{Type: config.S3Destination}})
+	task, err := backup.NewTask("foo", config.Task{Destinations: []config.Destination{{Type: config.S3Destination}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestSlackNotifyEmpty(t *testing.T) {
 func TestSlackNotifyError(t *testing.T) {
 	t.Parallel()
 
-	task, err := backup.NewTask("foo", config.Task{Destination: config.Destination{Type: config.S3Destination}})
+	task, err := backup.NewTask("foo", config.Task{Destinations: []config.Destination{{Type: config.S3Destination}}})
 	if err != nil {
 		t.Fatal(err)
 	}
